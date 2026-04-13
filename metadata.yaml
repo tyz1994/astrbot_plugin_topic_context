@@ -1,6 +1,6 @@
 name: astrbot_plugin_topic_context
-display_name: 主题记忆上下文
-desc: 基于主题的长期记忆插件。自动总结对话、按主题存储记忆、注入上下文，让 Bot 拥有跨会话记忆能力。
+display_name: 织忆
+desc: 基于主题的记忆组织与上下文管理。自动总结对话、按主题存储记忆、注入上下文，让 Bot 拥有跨会话记忆能力。
 version: v1.0.0
 author: zhangtianyu
 repo: https://github.com/Soulter/astrbot_plugin_topic_context

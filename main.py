@@ -1,8 +1,7 @@
-"""AstrBot Topic Context Memory Plugin - 主题记忆上下文管理插件。
+"""织忆 - 基于主题的记忆组织与上下文管理。
 
-基于主题的长期记忆系统，自动总结对话、按主题存储、注入上下文，
-让 Bot 拥有跨会话记忆能力。采用 Agent 自主检索设计，
-LLM 通过 function-calling 工具按需查阅记忆片段。
+自动总结对话、按主题存储、注入上下文，让 Bot 拥有跨会话记忆能力。
+采用 Agent 自主检索设计，LLM 通过 function-calling 工具按需查阅记忆片段。
 """
 
 import asyncio
@@ -31,7 +30,7 @@ from .tools.memory_tools import create_memory_tools
 @register(
     "astrbot_plugin_topic_context",
     "zhangtianyu",
-    "基于主题的长期记忆插件，自动总结对话、按主题存储、注入上下文",
+    "织忆 - 基于主题的记忆组织与上下文管理",
     "1.0.0",
 )
 class TopicContextPlugin(Star):

@@ -1,14 +1,42 @@
-# astrbot-plugin-helloworld
+# 织忆
 
-AstrBot 插件模板 / A template plugin for AstrBot plugin feature
+> 织忆你太美。遗忘是时间的慈悲，Bot，你的Bot不需要慈悲。
 
-> [!NOTE]
-> This repo is just a template of [AstrBot](https://github.com/AstrBotDevs/AstrBot) Plugin.
-> 
-> [AstrBot](https://github.com/AstrBotDevs/AstrBot) is an agentic assistant for both personal and group conversations. It can be deployed across dozens of mainstream instant messaging platforms, including QQ, Telegram, Feishu, DingTalk, Slack, LINE, Discord, Matrix, etc. In addition, it provides a reliable and extensible conversational AI infrastructure for individuals, developers, and teams. Whether you need a personal AI companion, an intelligent customer support agent, an automation assistant, or an enterprise knowledge base, AstrBot enables you to quickly build AI applications directly within your existing messaging workflows.
+基于主题的记忆组织与上下文管理，为 [AstrBot](https://github.com/AstrBotDevs/AstrBot) 提供跨会话长期记忆能力。
 
-# Supports
+## 设计理念
 
-- [AstrBot Repo](https://github.com/AstrBotDevs/AstrBot)
-- [AstrBot Plugin Development Docs (Chinese)](https://docs.astrbot.app/dev/star/plugin-new.html)
-- [AstrBot Plugin Development Docs (English)](https://docs.astrbot.app/en/dev/star/plugin-new.html)
+- **架构简单清晰** — 没有复杂的依赖和抽象，主题组织、纯文本存储，Markdown + JSON，看得懂、改得动
+- **轻量透明** — 记忆数据就是普通的文件，你可以随时打开查看、编辑、备份，不被任何格式锁定
+- **用户可控** — 通过 Web 管理界面自由增删改查主题与记忆片段，用户能掌控的记忆才是好记忆
+
+## 功能
+
+### 对话总结
+
+自动总结对话摘要并按主题存储。每个主题维护一份**核心记忆**，追踪该主题的最新动态；同时从负反馈中沉淀**经验记忆**，帮助 Bot 在同类场景中做出更好的回应。记忆碎片会定期合并整理，保持记忆库的精简与准确。
+
+### 上下文注入
+
+根据用户发送的消息自动匹配相关主题，将该主题的核心记忆和经验注入上下文，让 Bot 在对话中自然地延续之前的认知，无需用户重复交代背景。
+
+### Agent 自主检索
+
+依靠 Agent 能力自主挖掘非高频使用的深度记忆，在需要时通过 function-calling 按需查阅记忆片段，补充细节，弥补自动注入覆盖不到的长尾场景。
+
+### 管理界面
+
+提供 Web 管理界面，记忆对用户全透明。可以按自己的项目、兴趣点自由组织主题和记忆，形成对自己最有效的记忆结构。
+
+
+## 安装
+
+将本仓库克隆到 AstrBot 的 `data/plugins/` 目录下。
+
+## 配置
+
+安装后在 AstrBot 管理面板的插件配置页面进行设置，可配置总结频率、主题匹配阈值、独立 Provider 等参数。
+
+## 许可
+
+[AGPL-3.0](LICENSE)
