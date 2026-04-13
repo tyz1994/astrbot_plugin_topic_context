@@ -465,6 +465,9 @@ class TopicContextPlugin(Star):
             round_data=round_data,
         )
 
+        # 记录实际写入的 fragment ID，用于 core.md 引用
+        actual_fragment_id = ""
+
         if merge_result.should_merge:
             latest = await self.store.get_latest_fragment(umo, topic_id)
             if latest:
@@ -477,6 +480,7 @@ class TopicContextPlugin(Star):
                     new_keywords=merge_result.merged_keywords,
                     ts=ts,
                 )
+                actual_fragment_id = latest["id"]
                 logger.debug(f"[TopicContext] 合并到已有片段 {latest['id']}")
         else:
             fragment = await self.merger.create_new(
@@ -488,10 +492,11 @@ class TopicContextPlugin(Star):
                 round_data=round_data,
                 ts=ts,
             )
+            actual_fragment_id = fragment["id"]
             logger.debug(f"[TopicContext] 创建新片段 {fragment['id']}")
 
         # 8. 更新 core.md
-        await self._update_core_md(umo, topic_id, topic_name, summary_result.summary, round_data, ts=ts)
+        await self._update_core_md(umo, topic_id, topic_name, summary_result.summary, round_data, ts=ts, fragment_id=actual_fragment_id)
 
         # 9. 经验提取（如果检测到负反馈）
         if summary_result.is_negative_feedback and config.get("experience_detect_enabled", True):
@@ -506,10 +511,11 @@ class TopicContextPlugin(Star):
 
     async def _update_core_md(
         self, umo: str, topic_id: str, topic_name: str, new_summary: str, round_data: dict, ts: str = "",
+        fragment_id: str = "",
     ) -> None:
         """实时追加更新 core.md。"""
         core = await self.store.load_core_md(umo, topic_id)
-        fragment_id = MemoryStore.generate_fragment_id(ts)
+        fragment_id = fragment_id or MemoryStore.generate_fragment_id(ts)
         date_str = datetime.fromisoformat(ts).strftime("%Y-%m-%d") if ts else datetime.now().strftime("%Y-%m-%d")
         new_entry = f"- [{date_str}] {new_summary} (ID: {fragment_id})\n"
 
