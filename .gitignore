@@ -22,8 +22,8 @@ venv/
 .DS_Store
 Thumbs.db
 
-# Plugin data (runtime generated)
-memory/
+# Plugin data (runtime generated, stored in data_dir not in repo)
+
 
 # Debug
 debug/
