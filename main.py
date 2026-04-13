@@ -467,6 +467,8 @@ class TopicContextPlugin(Star):
 
         # 记录实际写入的 fragment ID，用于 core.md 引用
         actual_fragment_id = ""
+        is_merge = False
+        core_summary = summary_result.summary
 
         if merge_result.should_merge:
             latest = await self.store.get_latest_fragment(umo, topic_id)
@@ -481,6 +483,8 @@ class TopicContextPlugin(Star):
                     ts=ts,
                 )
                 actual_fragment_id = latest["id"]
+                is_merge = True
+                core_summary = merge_result.merged_summary
                 logger.debug(f"[TopicContext] 合并到已有片段 {latest['id']}")
         else:
             fragment = await self.merger.create_new(
@@ -496,7 +500,7 @@ class TopicContextPlugin(Star):
             logger.debug(f"[TopicContext] 创建新片段 {fragment['id']}")
 
         # 8. 更新 core.md
-        await self._update_core_md(umo, topic_id, topic_name, summary_result.summary, round_data, ts=ts, fragment_id=actual_fragment_id)
+        await self._update_core_md(umo, topic_id, topic_name, core_summary, round_data, ts=ts, fragment_id=actual_fragment_id, is_merge=is_merge)
 
         # 9. 经验提取（如果检测到负反馈）
         if summary_result.is_negative_feedback and config.get("experience_detect_enabled", True):
@@ -511,27 +515,44 @@ class TopicContextPlugin(Star):
 
     async def _update_core_md(
         self, umo: str, topic_id: str, topic_name: str, new_summary: str, round_data: dict, ts: str = "",
-        fragment_id: str = "",
+        fragment_id: str = "", is_merge: bool = False,
     ) -> None:
-        """实时追加更新 core.md。"""
+        """更新 core.md 的「最近记忆」部分。
+
+        新建片段时追加一行；合并时更新已有条目的摘要文本。
+        """
         core = await self.store.load_core_md(umo, topic_id)
         fragment_id = fragment_id or MemoryStore.generate_fragment_id(ts)
         date_str = datetime.fromisoformat(ts).strftime("%Y-%m-%d") if ts else datetime.now().strftime("%Y-%m-%d")
-        new_entry = f"- [{date_str}] {new_summary} (ID: {fragment_id})\n"
 
         if not core:
             # 新主题首次创建 core.md，用一次 LLM 调用分别生成概述和关键信息
             overview, key_info = await self._generate_core_sections(
                 umo, topic_name, round_data, ts=ts
             )
+            new_entry = f"- [{date_str}] {new_summary} (ID: {fragment_id})\n"
             core = (
                 f"# 主题: {topic_name}\n\n"
                 f"## 概述\n{overview}\n\n"
                 f"## 关键信息\n{key_info}\n\n"
                 f"## 最近记忆\n{new_entry}"
             )
+        elif is_merge:
+            # 合并：找到已有条目，更新其摘要文本
+            lines = core.split("\n")
+            updated = False
+            for i, line in enumerate(lines):
+                if f"(ID: {fragment_id})" in line:
+                    lines[i] = f"- [{date_str}] {new_summary} (ID: {fragment_id})"
+                    updated = True
+                    break
+            if not updated:
+                # 兜底：找不到已有条目时追加
+                lines.append(f"- [{date_str}] {new_summary} (ID: {fragment_id})")
+            core = "\n".join(lines)
         else:
-            # 追加到"最近记忆"部分
+            # 新建：追加到"最近记忆"部分
+            new_entry = f"- [{date_str}] {new_summary} (ID: {fragment_id})\n"
             if "## 最近记忆" in core:
                 core = core.rstrip() + "\n" + new_entry
             else:
