@@ -37,6 +37,13 @@
 
 安装后在 AstrBot 管理面板的插件配置页面进行设置，可配置总结频率、主题匹配阈值、独立 Provider 等参数。
 
+## 致谢
+
+织忆的设计参考了以下优秀项目：
+
+- [LivingMemory](https://github.com/lxfight-s-Astrbot-Plugins/astrbot_plugin_livingmemory) — 动态生命周期智能长期记忆插件
+- [Tool Use Cleaner](https://github.com/zz6zz666/astrbot_plugin_tool_use_cleaner) — 工具调用清洗器
+
 ## 许可
 
 [AGPL-3.0](LICENSE)
