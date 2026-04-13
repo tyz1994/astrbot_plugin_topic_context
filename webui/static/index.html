@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TopicContext - 记忆管理</title>
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<div id="app">
+  <!-- Login -->
+  <div id="login-page" class="login-page">
+    <div class="login-card">
+      <h1>TopicContext</h1>
+      <p>主题记忆管理系统</p>
+      <input type="password" id="password-input" placeholder="输入访问密码" @keydown.enter="login">
+      <button onclick="login()">登录</button>
+      <p id="login-error" class="error"></p>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div id="main-page" style="display:none">
+    <nav class="sidebar">
+      <div class="sidebar-header">
+        <h2>TopicContext</h2>
+      </div>
+      <div id="user-list" class="sidebar-content"></div>
+      <div class="sidebar-footer">
+        <button onclick="logout()">退出登录</button>
+      </div>
+    </nav>
+
+    <main class="content">
+      <!-- User view -->
+      <div id="view-users">
+        <div class="page-header">
+          <h2>用户列表</h2>
+        </div>
+        <table class="data-table">
+          <thead><tr><th>用户标识</th><th>主题数</th><th>轮次数</th><th>操作</th></tr></thead>
+          <tbody id="users-tbody"></tbody>
+        </table>
+      </div>
+
+      <!-- User home (no topic selected) -->
+      <div id="view-user-home" style="display:none">
+        <div class="page-header">
+          <button class="btn-back" onclick="showUsers()">&larr; 所有用户</button>
+          <h2 id="user-home-title">用户记忆</h2>
+          <div class="header-actions">
+            <button class="btn-primary" onclick="showCreateTopicModal()">新建主题</button>
+            <button class="btn-secondary" onclick="triggerDream(false)">立即 Dream</button>
+            <button class="btn-secondary" onclick="showDreamModal()">Dream (带指令)</button>
+          </div>
+        </div>
+        <table class="data-table topic-mgmt-table">
+          <thead>
+            <tr><th>主题名称</th><th>概述</th><th>片段数</th><th>创建时间</th><th>操作</th></tr>
+          </thead>
+          <tbody id="topic-mgmt-tbody"></tbody>
+        </table>
+        <p id="topic-mgmt-empty" style="color:var(--text-dim);display:none">暂无主题，点击「新建主题」创建。</p>
+      </div>
+
+      <!-- Topic detail view -->
+      <div id="view-topic" style="display:none">
+        <div class="page-header">
+          <button class="btn-back" onclick="backToUserHome()">&larr; 返回</button>
+          <h2 id="topic-title">主题详情</h2>
+          <div class="header-actions">
+            <button class="btn-secondary" onclick="triggerDream(true, true)">Dream 此主题</button>
+            <button class="btn-danger" onclick="deleteTopic()">删除主题</button>
+          </div>
+        </div>
+
+        <div class="tabs">
+          <button class="tab active" onclick="switchTab('core')">核心记忆 (core.md)</button>
+          <button class="tab" onclick="switchTab('experience')">经验教训 (experience.md)</button>
+          <button class="tab" onclick="switchTab('fragments')">记忆片段</button>
+          <button class="tab" onclick="switchTab('merge')">合并主题</button>
+        </div>
+
+        <div id="tab-core" class="tab-content">
+          <textarea id="core-editor" rows="20" placeholder="core.md 内容"></textarea>
+          <button class="btn-save" onclick="saveCore()">保存 core.md</button>
+        </div>
+
+        <div id="tab-experience" class="tab-content" style="display:none">
+          <textarea id="experience-editor" rows="20" placeholder="experience.md 内容"></textarea>
+          <button class="btn-save" onclick="saveExperience()">保存 experience.md</button>
+        </div>
+
+        <div id="tab-fragments" class="tab-content" style="display:none">
+          <div id="fragments-list"></div>
+        </div>
+
+        <div id="tab-merge" class="tab-content" style="display:none">
+          <div class="merge-panel">
+            <h3>合并主题到当前主题</h3>
+            <p>选择要合并的源主题，它们的所有片段和时间线将迁移到当前主题，然后被删除。</p>
+            <div id="merge-topic-list"></div>
+            <button class="btn-danger" onclick="executeMerge()">执行合并</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Dream Modal -->
+  <div id="dream-modal" class="modal" style="display:none">
+    <div class="modal-content">
+      <h3>Dream 整理</h3>
+      <p>输入自定义指令，指导 LLM 如何整理记忆。留空则使用默认策略。</p>
+      <textarea id="dream-instruction" rows="6" placeholder="例如：请把所有和 Python 相关的内容合并到一起，忽略太零碎的闲聊"></textarea>
+      <div class="modal-actions">
+        <button onclick="closeDreamModal()">取消</button>
+        <button class="btn-primary" onclick="triggerDream(true)">执行</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Fragment detail modal -->
+  <div id="fragment-modal" class="modal" style="display:none">
+    <div class="modal-content modal-lg">
+      <div class="modal-header">
+        <h3 id="fragment-modal-title">片段详情</h3>
+        <button class="btn-close" onclick="closeFragmentModal()">&times;</button>
+      </div>
+      <div id="fragment-modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Create topic modal -->
+  <div id="create-topic-modal" class="modal" style="display:none">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>新建主题</h3>
+        <button class="btn-close" onclick="closeCreateTopicModal()">&times;</button>
+      </div>
+      <label style="display:block;margin-bottom:6px;font-size:13px;color:var(--text-dim)">主题名称 *</label>
+      <input type="text" id="create-topic-name" style="width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:14px" placeholder="例如：旅行计划">
+      <div class="modal-actions">
+        <button class="btn-secondary" onclick="closeCreateTopicModal()">取消</button>
+        <button class="btn-primary" onclick="createTopic()">创建</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rename topic modal -->
+  <div id="rename-topic-modal" class="modal" style="display:none">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>重命名主题</h3>
+        <button class="btn-close" onclick="closeRenameTopicModal()">&times;</button>
+      </div>
+      <label style="display:block;margin-bottom:6px;font-size:13px;color:var(--text-dim)">新名称 *</label>
+      <input type="text" id="rename-topic-name" style="width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:14px">
+      <div class="modal-actions">
+        <button class="btn-secondary" onclick="closeRenameTopicModal()">取消</button>
+        <button class="btn-primary" onclick="renameTopic()">确认</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Transfer fragment modal -->
+  <div id="transfer-modal" class="modal" style="display:none">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>转移片段</h3>
+        <button class="btn-close" onclick="closeTransferModal()">&times;</button>
+      </div>
+      <p>选择目标主题，该片段将从当前主题迁移过去，并同步更新双方的 core.md。</p>
+      <div id="transfer-topic-list"></div>
+      <div class="modal-actions">
+        <button class="btn-secondary" onclick="closeTransferModal()">取消</button>
+        <button class="btn-primary" onclick="executeTransfer()">确认转移</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
