@@ -62,11 +62,13 @@ class TopicContextPlugin(Star):
         # 初始化存储
         self.store = MemoryStore(data_dir)
 
-        # 初始化调试日志记录器
-        self.debug_logger = LLMDebugLogger(data_dir)
-
         # 获取配置
         config = await self._get_config()
+
+        # 初始化调试日志记录器（默认关闭）
+        self.debug_logger = None
+        if config.get("debug_enabled", False):
+            self.debug_logger = LLMDebugLogger(data_dir)
 
         # 创建记忆总结专用调用器（支持独立 provider）
         summary_caller, self._summary_provider = self._create_provider_caller(

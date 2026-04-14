@@ -5,6 +5,12 @@
     "default": true,
     "description": "是否启用基于主题的记忆上下文管理功能"
   },
+  "debug_enabled": {
+    "type": "bool",
+    "title": "启用调试日志",
+    "default": false,
+    "description": "是否记录 LLM 调用的详细调试日志（用于排查问题，生产环境建议关闭）"
+  },
   "experience_detect_enabled": {
     "type": "bool",
     "title": "启用隐式负反馈检测",
