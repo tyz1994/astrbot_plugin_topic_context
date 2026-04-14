@@ -60,9 +60,31 @@ class FragmentMerger:
             # 没有已有片段，直接创建新的
             return MergeResult(should_merge=False)
 
-        latest_summary = latest.get("summary", "")
-        latest_round_count = len(latest.get("rounds", []))
+        # 时间窗口检查：如果最近片段的最后一轮超过 12 小时，直接不合并
+        latest_rounds = latest.get("rounds", [])
+        if latest_rounds:
+            last_ts_str = latest_rounds[-1].get("timestamp", "")
+            if last_ts_str:
+                try:
+                    last_ts = datetime.fromisoformat(last_ts_str)
+                    if (datetime.now() - last_ts).total_seconds() > 12 * 3600:
+                        logger.debug(
+                            "[FragmentMerger] 最近片段距上一轮超过 12 小时，跳过合并"
+                        )
+                        return MergeResult(should_merge=False)
+                except (ValueError, TypeError):
+                    pass
 
+        latest_summary = latest.get("summary", "")
+        latest_round_count = len(latest_rounds)
+
+        # 计算已有片段的对话总字符数
+        total_chars = sum(
+            len(r.get("user_message", "")) + len(r.get("assistant_response", ""))
+            for r in latest_rounds
+        )
+
+        # 基础提示词
         prompt = f"""请判断新的一轮对话是否应与已有记忆片段合并。
 
 已有片段摘要: {latest_summary}（已包含 {latest_round_count} 轮对话）
@@ -71,8 +93,6 @@ class FragmentMerger:
 请判断新轮次是否应与已有片段合并：
 - 如果新轮次是对已有话题的继续、深化、追问或补充，返回 "merge"
 - 如果新轮次开启了明显不同的子话题或方向，或者已有片段已经涵盖了足够完整的一段讨论，返回 "new"
-
-如果返回 "merge"，请同时生成合并后的综合摘要（覆盖旧摘要）。
 
 请返回如下 JSON 格式（不要包含 markdown 代码块标记）：
 {{
@@ -83,6 +103,12 @@ class FragmentMerger:
 角色区分：用户消息中出现的称呼是用户在叫助手，不是用户自己的名字。merged_summary 中统一用"用户"指代使用者，禁止把用户对助手的称呼当作用户名字。
 
 重要：merged_summary 中必须使用绝对日期（如"2025年3月15日"），禁止使用"今天"、"昨天"、"明天"、"上周"等相对时间。如果原文使用了相对时间，请保留原文中的绝对日期信息，不要自行引入相对时间。"""
+
+        # 超过 5 轮时追加额外约束，防止片段无限膨胀
+        if latest_round_count >= 5:
+            prompt += f"""
+
+注意：已有记忆分片已记录了 {latest_round_count} 轮对话，对话总长度为 {total_chars} 个字符。如果判定为合并可能造成单个分片过长，请仅在非常确信新轮次与已有片段属于同一连续讨论时才判定为 "merge"，否则应判定为 "new"。"""
 
         try:
             result_text = await self.llm_caller(
