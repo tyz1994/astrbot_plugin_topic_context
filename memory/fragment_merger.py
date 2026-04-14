@@ -14,7 +14,7 @@ class MergeResult:
     """合并判定结果。"""
 
     should_merge: bool
-    merged_summary: str = ""  # 合并后的综合摘要（should_merge=True 时有值）
+    merged_summary: str = ""  # 更新后的摘要（should_merge=True 时有值）
     merged_keywords: list[str] = None
 
     def __post_init__(self):
@@ -97,8 +97,14 @@ class FragmentMerger:
 请返回如下 JSON 格式（不要包含 markdown 代码块标记）：
 {{
   "decision": "merge" 或 "new",
-  "merged_summary": "合并后的综合摘要（仅 merge 时填写）"
+  "merged_summary": "更新后的摘要（仅 merge 时填写，见下方要求）"
 }}
+
+关于 merged_summary 的要求：
+- 这不是"合并两个摘要"，而是用新轮次的信息去更新已有摘要。不需要把新旧信息都堆在一起。
+- 更新后的摘要应反映这段讨论的当前状态和最新进展，长度控制在 {max(len(latest_summary), len(summary))} 字以内。
+- 旧摘要中已被新信息覆盖或不再重要的细节应当删减，而非保留。
+- 如果新轮次没有带来实质性的新信息（只是闲聊或确认），摘要可以保持不变。
 
 角色区分：用户消息中出现的称呼是用户在叫助手，不是用户自己的名字。merged_summary 中统一用"用户"指代使用者，禁止把用户对助手的称呼当作用户名字。
 
@@ -132,7 +138,7 @@ class FragmentMerger:
             merged_summary = data.get("merged_summary", "")
 
             if decision == "merge" and merged_summary:
-                # 合并关键词
+                # 关键词取并集，辅助检索
                 old_keywords = {kw.lower() for kw in latest.get("keywords", [])}
                 new_keywords = {kw.lower() for kw in keywords}
                 merged_keywords = list(old_keywords | new_keywords)
