@@ -2,7 +2,6 @@
 
 import json
 from dataclasses import dataclass, field
-from typing import Any
 
 from astrbot.api import logger
 
@@ -10,13 +9,13 @@ from astrbot.api import logger
 @dataclass
 class SummaryResult:
     """对话总结结果。"""
+
     worth_remembering: bool
     topic_name: str = ""
     summary: str = ""
     keywords: list[str] = field(default_factory=list)
     is_negative_feedback: bool = False
     negative_feedback_summary: str = ""
-
 
 
 class Summarizer:
@@ -54,7 +53,7 @@ class Summarizer:
         if existing_topics:
             topic_lines = []
             for t in existing_topics:
-                entry = f'- {t["name"]}'
+                entry = f"- {t['name']}"
                 # 加载 core.md 中的概述
                 if store and umo:
                     core_md = await store.load_core_md(umo, t["id"])
@@ -119,7 +118,11 @@ class Summarizer:
             # 清理可能的 markdown 包裹
             result_text = result_text.strip()
             if result_text.startswith("```"):
-                result_text = result_text.split("\n", 1)[1] if "\n" in result_text else result_text[3:]
+                result_text = (
+                    result_text.split("\n", 1)[1]
+                    if "\n" in result_text
+                    else result_text[3:]
+                )
             if result_text.endswith("```"):
                 result_text = result_text[:-3]
             result_text = result_text.strip()
@@ -135,7 +138,9 @@ class Summarizer:
                 negative_feedback_summary=data.get("negative_feedback_summary", ""),
             )
         except json.JSONDecodeError as e:
-            logger.warning(f"[Summarizer] JSON 解析失败: {e}, 原文: {result_text[:200]}")
+            logger.warning(
+                f"[Summarizer] JSON 解析失败: {e}, 原文: {result_text[:200]}"
+            )
             return SummaryResult(worth_remembering=False)
         except Exception as e:
             logger.error(f"[Summarizer] 总结失败: {e}")

@@ -38,6 +38,7 @@ class ExperienceManager:
             新增的经验条目文本，如果无法提取则有意义的经验则返回 None
         """
         from datetime import datetime
+
         date_str = datetime.now().strftime("%Y年%m月%d日")
 
         # 加载已有经验
@@ -53,7 +54,7 @@ class ExperienceManager:
 助手回复: {assistant_response}
 
 已有经验文件:
-{existing if existing else '(无)'}
+{existing if existing else "(无)"}
 
 请分析这次负反馈，提取一条简短、具体、可操作的经验教训。
 要求：
@@ -82,7 +83,11 @@ class ExperienceManager:
 
             # 追加到 experience.md
             new_content = f"\n\n{result}"
-            updated = existing + new_content if existing else f"# 主题: {topic_name} - 经验教训\n\n## 经验\n{result}"
+            updated = (
+                existing + new_content
+                if existing
+                else f"# 主题: {topic_name} - 经验教训\n\n## 经验\n{result}"
+            )
             await self.store.save_experience_md(umo, topic_id, updated)
 
             return result

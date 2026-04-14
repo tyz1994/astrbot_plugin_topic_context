@@ -18,7 +18,11 @@ class DreamManager:
         self.store = store
 
     async def organize_core(
-        self, umo: str, topic_id: str, topic_name: str, instruction: str = "",
+        self,
+        umo: str,
+        topic_id: str,
+        topic_name: str,
+        instruction: str = "",
     ) -> None:
         """整理单个主题的 core.md，统一 prompt，可选带用户指令。"""
         core = await self.store.load_core_md(umo, topic_id)
@@ -42,7 +46,9 @@ class DreamManager:
         if removed > 0:
             core = "\n".join(cleaned_lines)
             await self.store.save_core_md(umo, topic_id, core)
-            logger.info(f"[Dream] 主题 {topic_name}: 清理了 {removed} 条无效的 fragment 引用")
+            logger.info(
+                f"[Dream] 主题 {topic_name}: 清理了 {removed} 条无效的 fragment 引用"
+            )
 
         fragments_summary = "\n".join(
             f"- [{f.get('created_at', '')[:10]}] {f.get('summary', '')} (ID: {f.get('id', '')})"
@@ -61,7 +67,7 @@ class DreamManager:
 主题: {topic_name}
 
 当前 core.md:
-{core if core else '(空)'}
+{core if core else "(空)"}
 
 所有片段摘要:
 {fragments_summary}
@@ -82,11 +88,15 @@ class DreamManager:
                 await self.store.save_core_md(umo, topic_id, result.strip())
                 logger.info(f"[Dream] 已整理主题 {topic_name} 的 core.md")
             else:
-                logger.warning(f"[Dream] 主题 {topic_name} 的 core.md 整理结果为空或过短，跳过更新")
+                logger.warning(
+                    f"[Dream] 主题 {topic_name} 的 core.md 整理结果为空或过短，跳过更新"
+                )
         except Exception as e:
             logger.error(f"[Dream] 整理 core.md 失败 {topic_name}: {e}")
 
-    async def organize_experience(self, umo: str, topic_id: str, topic_name: str) -> None:
+    async def organize_experience(
+        self, umo: str, topic_id: str, topic_name: str
+    ) -> None:
         """Dream 整理：去重合并经验条目。"""
         existing = await self.store.load_experience_md(umo, topic_id)
         if not existing:

@@ -107,8 +107,9 @@ class ColdStarter:
         for i, conv in enumerate(filtered_convs):
             if progress_callback:
                 await progress_callback(
-                    i + 1, len(filtered_convs),
-                    f"正在扫描第 {i+1}/{len(filtered_convs)} 个会话...",
+                    i + 1,
+                    len(filtered_convs),
+                    f"正在扫描第 {i + 1}/{len(filtered_convs)} 个会话...",
                 )
 
             try:
@@ -160,11 +161,13 @@ class ColdStarter:
                         if self._is_command_message(msg["text"]):
                             j += 2
                             continue
-                        all_rounds.append({
-                            "user_message": msg["text"],
-                            "assistant_response": resp["text"],
-                            "timestamp": conv_ts,
-                        })
+                        all_rounds.append(
+                            {
+                                "user_message": msg["text"],
+                                "assistant_response": resp["text"],
+                                "timestamp": conv_ts,
+                            }
+                        )
                         j += 2
                     else:
                         j += 1
@@ -183,8 +186,9 @@ class ColdStarter:
         for i, rnd in enumerate(all_rounds):
             if progress_callback:
                 await progress_callback(
-                    i + 1, len(all_rounds),
-                    f"正在处理第 {i+1}/{len(all_rounds)} 轮对话...",
+                    i + 1,
+                    len(all_rounds),
+                    f"正在处理第 {i + 1}/{len(all_rounds)} 轮对话...",
                 )
 
             try:
@@ -192,7 +196,12 @@ class ColdStarter:
                 if i > 0:
                     await asyncio.sleep(1)
 
-                await process_round_fn(umo, rnd["user_message"], rnd["assistant_response"], rnd.get("timestamp"))
+                await process_round_fn(
+                    umo,
+                    rnd["user_message"],
+                    rnd["assistant_response"],
+                    rnd.get("timestamp"),
+                )
 
             except Exception as e:
                 stats["errors"].append(f"处理第 {i} 轮失败: {e}")

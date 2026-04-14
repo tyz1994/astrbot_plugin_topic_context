@@ -3,19 +3,16 @@
 import asyncio
 import secrets
 from pathlib import Path
-from typing import Any
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
 
 from astrbot.api import logger
 
-from fastapi import Depends
-from ..memory.store import MemoryStore
 from ..memory.dream import DreamManager
+from ..memory.store import MemoryStore
 
 
 class WebUIServer:
@@ -81,13 +78,17 @@ class WebUIServer:
                         # 从 conversation_log 中统计总轮次数
                         total_rounds = 0
                         for topic in index.get("topics", []):
-                            rounds = await self.store.load_conversation_log(d.name, topic["id"])
+                            rounds = await self.store.load_conversation_log(
+                                d.name, topic["id"]
+                            )
                             total_rounds += len(rounds)
-                        users.append({
-                            "umo": d.name,
-                            "topic_count": len(index.get("topics", [])),
-                            "round_count": total_rounds,
-                        })
+                        users.append(
+                            {
+                                "umo": d.name,
+                                "topic_count": len(index.get("topics", [])),
+                                "round_count": total_rounds,
+                            }
+                        )
             return users
 
         # ─── 主题管理 ───
@@ -131,19 +132,25 @@ class WebUIServer:
             }
 
         @self._app.put("/api/users/{umo}/topics/{topic_id}/core")
-        async def update_core(umo: str, topic_id: str, body: dict, _token: str = Depends(auth_dep)):
+        async def update_core(
+            umo: str, topic_id: str, body: dict, _token: str = Depends(auth_dep)
+        ):
             content = body.get("content", "")
             await self.store.save_core_md(umo, topic_id, content)
             return {"ok": True}
 
         @self._app.put("/api/users/{umo}/topics/{topic_id}/experience")
-        async def update_experience(umo: str, topic_id: str, body: dict, _token: str = Depends(auth_dep)):
+        async def update_experience(
+            umo: str, topic_id: str, body: dict, _token: str = Depends(auth_dep)
+        ):
             content = body.get("content", "")
             await self.store.save_experience_md(umo, topic_id, content)
             return {"ok": True}
 
         @self._app.put("/api/users/{umo}/topics/{topic_id}/name")
-        async def rename_topic(umo: str, topic_id: str, body: dict, _token: str = Depends(auth_dep)):
+        async def rename_topic(
+            umo: str, topic_id: str, body: dict, _token: str = Depends(auth_dep)
+        ):
             new_name = body.get("name", "")
             if not new_name:
                 raise HTTPException(400, "名称不能为空")
@@ -151,35 +158,47 @@ class WebUIServer:
             return {"ok": True}
 
         @self._app.delete("/api/users/{umo}/topics/{topic_id}")
-        async def delete_topic(umo: str, topic_id: str, _token: str = Depends(auth_dep)):
+        async def delete_topic(
+            umo: str, topic_id: str, _token: str = Depends(auth_dep)
+        ):
             await self.store.remove_topic(umo, topic_id)
             return {"ok": True}
 
         # ─── 片段管理 ───
 
         @self._app.get("/api/users/{umo}/topics/{topic_id}/fragments/{fragment_id}")
-        async def get_fragment(umo: str, topic_id: str, fragment_id: str, _token: str = Depends(auth_dep)):
+        async def get_fragment(
+            umo: str, topic_id: str, fragment_id: str, _token: str = Depends(auth_dep)
+        ):
             frag = await self.store.load_fragment(umo, topic_id, fragment_id)
             if not frag:
                 raise HTTPException(404, "片段不存在")
             return frag
 
         @self._app.delete("/api/users/{umo}/topics/{topic_id}/fragments/{fragment_id}")
-        async def delete_fragment(umo: str, topic_id: str, fragment_id: str, _token: str = Depends(auth_dep)):
+        async def delete_fragment(
+            umo: str, topic_id: str, fragment_id: str, _token: str = Depends(auth_dep)
+        ):
             await self.store.delete_fragment(umo, topic_id, fragment_id)
             return {"ok": True}
 
         @self._app.post("/api/users/{umo}/transfer-fragment")
-        async def transfer_fragment(umo: str, body: dict, _token: str = Depends(auth_dep)):
+        async def transfer_fragment(
+            umo: str, body: dict, _token: str = Depends(auth_dep)
+        ):
             source_topic_id = body.get("source_topic_id", "")
             target_topic_id = body.get("target_topic_id", "")
             fragment_id = body.get("fragment_id", "")
             if not source_topic_id or not target_topic_id or not fragment_id:
-                raise HTTPException(400, "缺少 source_topic_id、target_topic_id 或 fragment_id")
+                raise HTTPException(
+                    400, "缺少 source_topic_id、target_topic_id 或 fragment_id"
+                )
             if source_topic_id == target_topic_id:
                 raise HTTPException(400, "源主题和目标主题不能相同")
             try:
-                await self.store.transfer_fragment(umo, source_topic_id, target_topic_id, fragment_id)
+                await self.store.transfer_fragment(
+                    umo, source_topic_id, target_topic_id, fragment_id
+                )
             except FileNotFoundError as e:
                 raise HTTPException(404, str(e))
             return {"ok": True}
@@ -238,9 +257,13 @@ class WebUIServer:
                     raise HTTPException(404, "主题不存在")
 
                 # 整理 core.md
-                await self.dream_mgr.organize_core(umo, topic["id"], topic["name"], instruction)
+                await self.dream_mgr.organize_core(
+                    umo, topic["id"], topic["name"], instruction
+                )
                 # 整理 experience.md
-                await self.dream_mgr.organize_experience(umo, topic["id"], topic["name"])
+                await self.dream_mgr.organize_experience(
+                    umo, topic["id"], topic["name"]
+                )
                 results.append({"topic_id": topic_id, "status": "done"})
             else:
                 # 整理所有主题
@@ -248,11 +271,17 @@ class WebUIServer:
 
                 for topic in index.get("topics", []):
                     try:
-                        await self.dream_mgr.organize_core(umo, topic["id"], topic["name"], instruction)
-                        await self.dream_mgr.organize_experience(umo, topic["id"], topic["name"])
+                        await self.dream_mgr.organize_core(
+                            umo, topic["id"], topic["name"], instruction
+                        )
+                        await self.dream_mgr.organize_experience(
+                            umo, topic["id"], topic["name"]
+                        )
                         results.append({"topic_id": topic["id"], "status": "done"})
                     except Exception as e:
-                        results.append({"topic_id": topic["id"], "status": f"error: {e}"})
+                        results.append(
+                            {"topic_id": topic["id"], "status": f"error: {e}"}
+                        )
                     await asyncio.sleep(2)
 
             return {"results": results}
@@ -264,16 +293,20 @@ class WebUIServer:
             index = await self.store.load_topics_index(umo)
             results = []
             for topic in index.get("topics", []):
-                frags = await self.store.search_fragments_by_keyword(umo, topic["id"], keyword)
+                frags = await self.store.search_fragments_by_keyword(
+                    umo, topic["id"], keyword
+                )
                 for f in frags[:5]:
-                    results.append({
-                        "topic_id": topic["id"],
-                        "topic_name": topic["name"],
-                        "fragment_id": f["id"],
-                        "summary": f.get("summary", ""),
-                        "rounds_count": len(f.get("rounds", [])),
-                        "created_at": f.get("created_at", ""),
-                    })
+                    results.append(
+                        {
+                            "topic_id": topic["id"],
+                            "topic_name": topic["name"],
+                            "fragment_id": f["id"],
+                            "summary": f.get("summary", ""),
+                            "rounds_count": len(f.get("rounds", [])),
+                            "created_at": f.get("created_at", ""),
+                        }
+                    )
             return {"results": results}
 
     # ─── 生命周期 ───
@@ -282,8 +315,11 @@ class WebUIServer:
         if self._server_task and not self._server_task.done():
             return
         config = uvicorn.Config(
-            app=self._app, host=self.host, port=self.port,
-            log_level="warning", loop="asyncio",
+            app=self._app,
+            host=self.host,
+            port=self.port,
+            log_level="warning",
+            loop="asyncio",
         )
         self._server = uvicorn.Server(config)
         self._server_task = asyncio.create_task(self._server.serve())

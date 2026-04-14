@@ -3,7 +3,6 @@
 import json
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
 
 from astrbot.api import logger
 
@@ -13,6 +12,7 @@ from .store import MemoryStore
 @dataclass
 class MergeResult:
     """合并判定结果。"""
+
     should_merge: bool
     merged_summary: str = ""  # 合并后的综合摘要（should_merge=True 时有值）
     merged_keywords: list[str] = None
@@ -92,7 +92,11 @@ class FragmentMerger:
             )
             result_text = result_text.strip()
             if result_text.startswith("```"):
-                result_text = result_text.split("\n", 1)[1] if "\n" in result_text else result_text[3:]
+                result_text = (
+                    result_text.split("\n", 1)[1]
+                    if "\n" in result_text
+                    else result_text[3:]
+                )
             if result_text.endswith("```"):
                 result_text = result_text[:-3]
             result_text = result_text.strip()
@@ -103,8 +107,8 @@ class FragmentMerger:
 
             if decision == "merge" and merged_summary:
                 # 合并关键词
-                old_keywords = set(kw.lower() for kw in latest.get("keywords", []))
-                new_keywords = set(kw.lower() for kw in keywords)
+                old_keywords = {kw.lower() for kw in latest.get("keywords", [])}
+                new_keywords = {kw.lower() for kw in keywords}
                 merged_keywords = list(old_keywords | new_keywords)
 
                 return MergeResult(

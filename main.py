@@ -6,24 +6,22 @@
 
 import asyncio
 from datetime import datetime, timedelta
-from pathlib import Path
 
-from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
-from astrbot.api.event.filter import EventMessageType
+from astrbot.api import logger
+from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.provider import ProviderRequest
 from astrbot.api.star import Context, Star, register
-from astrbot.api import logger, llm_tool
 from astrbot.core.star.star_tools import StarTools
 
+from .memory.coldstart import ColdStarter  # noqa: F401 - 仅用于类型提示
+from .memory.context_injector import ContextInjector
+from .memory.debug_logger import LLMDebugLogger
+from .memory.dream import DreamManager
+from .memory.experience import ExperienceManager
+from .memory.fragment_merger import FragmentMerger
 from .memory.store import MemoryStore
 from .memory.summarizer import Summarizer
-from .memory.fragment_merger import FragmentMerger
-from .memory.experience import ExperienceManager
-from .memory.dream import DreamManager
 from .memory.topic_matcher import TopicMatcher
-from .memory.context_injector import ContextInjector
-from .memory.coldstart import ColdStarter  # noqa: F401 - 仅用于类型提示
-from .memory.debug_logger import LLMDebugLogger
 from .tools.memory_tools import create_memory_tools
 
 
@@ -119,10 +117,13 @@ class TopicContextPlugin(Star):
         """启动 WebUI 控制台。"""
         try:
             from .webui.server import WebUIServer
+
             self.webui_server = WebUIServer(self.store, config, llm_caller)
             await self.webui_server.start()
         except ImportError:
-            logger.warning("[TopicContext] WebUI 依赖缺失（需要 fastapi, uvicorn），跳过启动")
+            logger.warning(
+                "[TopicContext] WebUI 依赖缺失（需要 fastapi, uvicorn），跳过启动"
+            )
         except Exception as e:
             logger.error(f"[TopicContext] WebUI 启动失败: {e}")
 
@@ -150,20 +151,28 @@ class TopicContextPlugin(Star):
             try:
                 provider = self.context.get_provider_by_id(provider_id)
                 if provider:
-                    logger.info(f"[TopicContext] {label}使用独立 Provider: {provider_id}")
+                    logger.info(
+                        f"[TopicContext] {label}使用独立 Provider: {provider_id}"
+                    )
                 else:
-                    logger.warning(f"[TopicContext] 未找到{label} Provider: {provider_id}")
+                    logger.warning(
+                        f"[TopicContext] 未找到{label} Provider: {provider_id}"
+                    )
             except Exception as e:
-                logger.warning(f"[TopicContext] 无法加载{label} Provider {provider_id}: {e}")
+                logger.warning(
+                    f"[TopicContext] 无法加载{label} Provider {provider_id}: {e}"
+                )
         else:
             logger.warning(f"[TopicContext] {label}未配置 Provider ID")
 
         async def caller(system_prompt: str, prompt: str, caller_name: str = "") -> str:
             return await self._call_llm(
-                system_prompt, prompt,
+                system_prompt,
+                prompt,
                 provider=provider,
                 caller_name=caller_name,
             )
+
         return caller, provider
 
     async def _call_llm(
@@ -185,10 +194,14 @@ class TopicContextPlugin(Star):
             retry_interval: 重试间隔（秒）。
             timeout: 单次请求超时时间（秒）。
         """
-        model_name = getattr(provider, "model_name", "") or getattr(provider, "model", "") or ""
+        model_name = (
+            getattr(provider, "model_name", "") or getattr(provider, "model", "") or ""
+        )
 
         if not provider:
-            logger.warning("[TopicContext] 无法获取 LLM Provider，请检查插件配置中的 Provider ID")
+            logger.warning(
+                "[TopicContext] 无法获取 LLM Provider，请检查插件配置中的 Provider ID"
+            )
             if self.debug_logger:
                 self.debug_logger.log(
                     caller=caller_name or "_call_llm",
@@ -203,6 +216,7 @@ class TopicContextPlugin(Star):
             return ""
 
         import time
+
         last_error = ""
         for attempt in range(1, max_retries + 1):
             t0 = time.perf_counter()
@@ -215,7 +229,11 @@ class TopicContextPlugin(Star):
                     timeout=timeout,
                 )
                 elapsed_ms = (time.perf_counter() - t0) * 1000
-                result = resp.completion_text if hasattr(resp, 'completion_text') else str(resp.result_chain)
+                result = (
+                    resp.completion_text
+                    if hasattr(resp, "completion_text")
+                    else str(resp.result_chain)
+                )
 
                 if self.debug_logger:
                     self.debug_logger.log(
@@ -231,9 +249,7 @@ class TopicContextPlugin(Star):
             except asyncio.TimeoutError:
                 elapsed_ms = (time.perf_counter() - t0) * 1000
                 last_error = "timeout"
-                logger.warning(
-                    f"[TopicContext] LLM 调用超时 ({attempt}/{max_retries})"
-                )
+                logger.warning(f"[TopicContext] LLM 调用超时 ({attempt}/{max_retries})")
                 if self.debug_logger:
                     self.debug_logger.log(
                         caller=caller_name or "_call_llm",
@@ -328,14 +344,17 @@ class TopicContextPlugin(Star):
         logger.info(f"[TopicContext] umo={umo}")
 
         # 跳过工具调用中间轮次（LLM 发起 function call，等待工具返回结果）
-        if hasattr(response, 'tools_call_name') and response.tools_call_name:
+        if hasattr(response, "tools_call_name") and response.tools_call_name:
             logger.info(
                 f"[TopicContext] 检测到工具调用（tools={response.tools_call_name}），跳过总结"
             )
             return
 
         # 跳过工具调用后的总结轮（tools_call_extra_content 非空说明是 tool loop 产生的内容）
-        if hasattr(response, 'tools_call_extra_content') and response.tools_call_extra_content:
+        if (
+            hasattr(response, "tools_call_extra_content")
+            and response.tools_call_extra_content
+        ):
             logger.info(
                 f"[TopicContext] 检测到 tool loop 总结响应（tools_call_extra_content={response.tools_call_extra_content[:100]}），跳过总结"
             )
@@ -343,8 +362,12 @@ class TopicContextPlugin(Star):
 
         # 从缓存获取用户消息（在 on_llm_request 中存入）
         user_message = self._pending_user_messages.pop(umo, "")
-        logger.info(f"[TopicContext] 缓存的用户消息: {repr(user_message[:100] if user_message else '')}")
-        logger.info(f"[TopicContext] 当前 _pending_user_messages keys: {list(self._pending_user_messages.keys())}")
+        logger.info(
+            f"[TopicContext] 缓存的用户消息: {repr(user_message[:100] if user_message else '')}"
+        )
+        logger.info(
+            f"[TopicContext] 当前 _pending_user_messages keys: {list(self._pending_user_messages.keys())}"
+        )
         if not user_message:
             logger.info("[TopicContext] 未找到缓存的用户消息，跳过总结")
             return
@@ -352,19 +375,26 @@ class TopicContextPlugin(Star):
         # 跳过斜杠指令型消息（如 /new, /memory, /help 等），无需总结记忆
         # 注意：is_at_or_wake_command 在私聊场景下永远为 True，不能用于此判断
         if user_message.strip().startswith("/"):
-            logger.info(f"[TopicContext] 是斜杠指令消息（{user_message.strip()[:30]}），跳过总结")
+            logger.info(
+                f"[TopicContext] 是斜杠指令消息（{user_message.strip()[:30]}），跳过总结"
+            )
             return
 
         # 从 LLMResponse 提取助手回复文本
         assistant_response = ""
-        if hasattr(response, 'completion_text') and response.completion_text:
+        if hasattr(response, "completion_text") and response.completion_text:
             assistant_response = response.completion_text
         elif response.result_chain and response.result_chain.chain:
             from astrbot.api.message_components import Plain
-            parts = [p.text for p in response.result_chain.chain if isinstance(p, Plain)]
+
+            parts = [
+                p.text for p in response.result_chain.chain if isinstance(p, Plain)
+            ]
             assistant_response = "\n".join(parts)
 
-        logger.info(f"[TopicContext] 提取到的助手回复: {repr(assistant_response[:100] if assistant_response else '')}")
+        logger.info(
+            f"[TopicContext] 提取到的助手回复: {repr(assistant_response[:100] if assistant_response else '')}"
+        )
         if not assistant_response:
             logger.info("[TopicContext] 助手回复为空，退出")
             return
@@ -377,7 +407,11 @@ class TopicContextPlugin(Star):
             logger.error(f"[TopicContext] 处理轮次失败: {e}", exc_info=True)
 
     async def _process_round(
-        self, umo: str, user_message: str, assistant_response: str, config: dict,
+        self,
+        umo: str,
+        user_message: str,
+        assistant_response: str,
+        config: dict,
         timestamp: str | None = None,
     ) -> None:
         """处理一轮对话：总结（含主题匹配）→ 保存原文 → 记忆处理。
@@ -394,8 +428,12 @@ class TopicContextPlugin(Star):
 
         # 2. 总结（主题匹配 + 记忆判断一步完成），传入日期以使用绝对时间
         summary_result = await self.summarizer.summarize(
-            user_message, assistant_response, existing_topics, message_date=ts,
-            store=self.store, umo=umo,
+            user_message,
+            assistant_response,
+            existing_topics,
+            message_date=ts,
+            store=self.store,
+            umo=umo,
         )
 
         # 3. 确定主题 —— LLM 返回的 topic_name 已经是精确匹配的名称
@@ -417,23 +455,31 @@ class TopicContextPlugin(Star):
         if not existing_topic:
             # 创建新主题
             now = datetime.now().isoformat()
-            await self.store.add_topic(umo, {
-                "id": topic_id,
-                "name": topic_name,
-                "created_at": now,
-                "updated_at": now,
-            })
+            await self.store.add_topic(
+                umo,
+                {
+                    "id": topic_id,
+                    "name": topic_name,
+                    "created_at": now,
+                    "updated_at": now,
+                },
+            )
 
         # 4. 保存原始对话到 conversation_log（始终执行，保证上下文连续性）
-        await self.store.append_conversation_log(umo, topic_id, {
-            "timestamp": ts,
-            "user_message": user_message,
-            "assistant_response": assistant_response,
-        })
+        await self.store.append_conversation_log(
+            umo,
+            topic_id,
+            {
+                "timestamp": ts,
+                "user_message": user_message,
+                "assistant_response": assistant_response,
+            },
+        )
 
         # 更新主题的 updated_at
         await self.store.update_topic(
-            umo, topic_id,
+            umo,
+            topic_id,
             {"updated_at": ts},
         )
 
@@ -500,10 +546,21 @@ class TopicContextPlugin(Star):
             logger.debug(f"[TopicContext] 创建新片段 {fragment['id']}")
 
         # 8. 更新 core.md
-        await self._update_core_md(umo, topic_id, topic_name, core_summary, round_data, ts=ts, fragment_id=actual_fragment_id, is_merge=is_merge)
+        await self._update_core_md(
+            umo,
+            topic_id,
+            topic_name,
+            core_summary,
+            round_data,
+            ts=ts,
+            fragment_id=actual_fragment_id,
+            is_merge=is_merge,
+        )
 
         # 9. 经验提取（如果检测到负反馈）
-        if summary_result.is_negative_feedback and config.get("experience_detect_enabled", True):
+        if summary_result.is_negative_feedback and config.get(
+            "experience_detect_enabled", True
+        ):
             await self.experience_mgr.extract_experience(
                 umo=umo,
                 topic_id=topic_id,
@@ -514,8 +571,15 @@ class TopicContextPlugin(Star):
             )
 
     async def _update_core_md(
-        self, umo: str, topic_id: str, topic_name: str, new_summary: str, round_data: dict, ts: str = "",
-        fragment_id: str = "", is_merge: bool = False,
+        self,
+        umo: str,
+        topic_id: str,
+        topic_name: str,
+        new_summary: str,
+        round_data: dict,
+        ts: str = "",
+        fragment_id: str = "",
+        is_merge: bool = False,
     ) -> None:
         """更新 core.md 的「最近记忆」部分。
 
@@ -523,7 +587,11 @@ class TopicContextPlugin(Star):
         """
         core = await self.store.load_core_md(umo, topic_id)
         fragment_id = fragment_id or MemoryStore.generate_fragment_id(ts)
-        date_str = datetime.fromisoformat(ts).strftime("%Y-%m-%d") if ts else datetime.now().strftime("%Y-%m-%d")
+        date_str = (
+            datetime.fromisoformat(ts).strftime("%Y-%m-%d")
+            if ts
+            else datetime.now().strftime("%Y-%m-%d")
+        )
 
         if not core:
             # 新主题首次创建 core.md，用一次 LLM 调用分别生成概述和关键信息
@@ -561,7 +629,11 @@ class TopicContextPlugin(Star):
         await self.store.save_core_md(umo, topic_id, core)
 
     async def _generate_core_sections(
-        self, umo: str, topic_name: str, round_data: dict, ts: str = "",
+        self,
+        umo: str,
+        topic_name: str,
+        round_data: dict,
+        ts: str = "",
     ) -> tuple[str, str]:
         """首次创建 core.md 时，一次 LLM 调用同时生成概述和关键信息。
 
@@ -600,7 +672,9 @@ class TopicContextPlugin(Star):
                 caller_name="update_core_md.generate_sections",
             )
         except Exception as e:
-            logger.warning(f"[TopicContext] 生成 core 概述/关键信息失败，使用摘要兜底: {e}")
+            logger.warning(
+                f"[TopicContext] 生成 core 概述/关键信息失败，使用摘要兜底: {e}"
+            )
             return summary, f"- {summary}"
 
         # 解析 LLM 输出
@@ -660,7 +734,9 @@ class TopicContextPlugin(Star):
             prev_round = self._extract_prev_round(req.contexts)
 
             # 1. 主题匹配（支持多主题）
-            matched_topics = await self.topic_matcher.match(umo, user_message, prev_round)
+            matched_topics = await self.topic_matcher.match(
+                umo, user_message, prev_round
+            )
 
             if matched_topics:
                 topic_names = [t["name"] for t in matched_topics]
@@ -684,7 +760,9 @@ class TopicContextPlugin(Star):
                     elapsed_ms=0,
                     success=True,
                     extra={
-                        "matched_topics": [t["name"] for t in matched_topics] if matched_topics else [],
+                        "matched_topics": [t["name"] for t in matched_topics]
+                        if matched_topics
+                        else [],
                         "original_system_prompt": original_system_prompt,
                         "context_modified": len(matched_topics) > 0,
                     },
@@ -784,7 +862,9 @@ class TopicContextPlugin(Star):
                 break
 
         if not topic:
-            yield event.plain_result(f"未找到主题 '{topic_name}'。使用 /memory topics 查看所有主题。")
+            yield event.plain_result(
+                f"未找到主题 '{topic_name}'。使用 /memory topics 查看所有主题。"
+            )
             return
 
         topic_id = topic["id"]
@@ -880,6 +960,7 @@ class TopicContextPlugin(Star):
         user_data_dir = self.store.user_dir(umo)
 
         import shutil
+
         # 清空主题目录
         for d in user_data_dir.iterdir():
             if d.is_dir():
@@ -914,8 +995,12 @@ class TopicContextPlugin(Star):
             config = await self._get_config()
 
             # 将 _process_round 包装为冷启动回调
-            async def process_round(umo, user_message, assistant_response, timestamp=None):
-                await self._process_round(umo, user_message, assistant_response, config, timestamp=timestamp)
+            async def process_round(
+                umo, user_message, assistant_response, timestamp=None
+            ):
+                await self._process_round(
+                    umo, user_message, assistant_response, config, timestamp=timestamp
+                )
 
             stats = await self.cold_starter.run(
                 umo=umo,
@@ -973,7 +1058,7 @@ class TopicContextPlugin(Star):
     async def _run_dream(self):
         """执行 Dream：遍历所有用户的所有主题，整理记忆。"""
         logger.info("[Dream] 开始记忆整理...")
-        config = await self._get_config()
+        await self._get_config()
 
         try:
             data_dir = StarTools.get_data_dir("astrbot_plugin_topic_context")
@@ -1004,7 +1089,9 @@ class TopicContextPlugin(Star):
                         await self.dream_mgr.organize_core(umo, topic_id, topic_name)
 
                         # 整理 experience.md
-                        await self.dream_mgr.organize_experience(umo, topic_id, topic_name)
+                        await self.dream_mgr.organize_experience(
+                            umo, topic_id, topic_name
+                        )
 
                         # 限速
                         await asyncio.sleep(2)
@@ -1012,8 +1099,9 @@ class TopicContextPlugin(Star):
                 except Exception as e:
                     logger.warning(f"[Dream] 处理用户 {user_dir.name} 失败: {e}")
 
-            logger.info(f"[Dream] 记忆整理完成。处理 {user_count} 个用户, {topic_count} 个主题")
+            logger.info(
+                f"[Dream] 记忆整理完成。处理 {user_count} 个用户, {topic_count} 个主题"
+            )
 
         except Exception as e:
             logger.error(f"[Dream] 执行失败: {e}")
-

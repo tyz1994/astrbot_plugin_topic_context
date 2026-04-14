@@ -56,9 +56,9 @@ class TopicMatcher:
                         summary += line + "\n"
                 summary = summary.strip()
 
-            entry = f'- {t["name"]}'
+            entry = f"- {t['name']}"
             if summary:
-                entry += f'\n  概述: {summary}'
+                entry += f"\n  概述: {summary}"
             topic_entries.append(entry)
 
         topics_desc = "\n".join(topic_entries)
@@ -95,7 +95,7 @@ class TopicMatcher:
 
             # 按主题名称匹配，支持多行输出
             matched = []
-            topic_name_set = set(t["name"] for t in topics)
+            topic_name_set = {t["name"] for t in topics}
             for line in result.split("\n"):
                 line = line.strip()
                 if not line:

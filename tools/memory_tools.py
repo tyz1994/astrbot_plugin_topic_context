@@ -42,7 +42,7 @@ def create_memory_tools(store: MemoryStore, current_umo_holder: dict):
                     lines.append(f"关键词: {', '.join(fragment.get('keywords', []))}")
                     lines.append("\n对话详情:")
                     for i, rnd in enumerate(fragment.get("rounds", [])):
-                        lines.append(f"\n--- 轮次 {i+1} ---")
+                        lines.append(f"\n--- 轮次 {i + 1} ---")
                         lines.append(f"[用户] {rnd.get('user_message', '')}")
                         lines.append(f"[助手] {rnd.get('assistant_response', '')}")
                     return "\n".join(lines)
@@ -71,14 +71,16 @@ def create_memory_tools(store: MemoryStore, current_umo_holder: dict):
                     umo, topic["id"], keyword
                 )
                 for frag in results:
-                    all_results.append({
-                        "topic": topic["name"],
-                        "topic_id": topic["id"],
-                        "fragment_id": frag["id"],
-                        "summary": frag.get("summary", ""),
-                        "rounds_count": len(frag.get("rounds", [])),
-                        "created_at": frag.get("created_at", ""),
-                    })
+                    all_results.append(
+                        {
+                            "topic": topic["name"],
+                            "topic_id": topic["id"],
+                            "fragment_id": frag["id"],
+                            "summary": frag.get("summary", ""),
+                            "rounds_count": len(frag.get("rounds", [])),
+                            "created_at": frag.get("created_at", ""),
+                        }
+                    )
 
             if not all_results:
                 return f"未找到与 '{keyword}' 相关的记忆片段。"

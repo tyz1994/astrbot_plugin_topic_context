@@ -1,7 +1,5 @@
 """上下文注入器：将 core.md 和 experience.md 注入到 LLM 请求中。"""
 
-from astrbot.api import logger
-
 from .store import MemoryStore
 
 
@@ -48,7 +46,11 @@ class ContextInjector:
             if experience_content:
                 # 提取经验条目（去掉标题行）
                 exp_lines = experience_content.strip().split("\n")
-                exp_entries = [line for line in exp_lines if line.startswith("- ") or line.startswith("→ ")]
+                exp_entries = [
+                    line
+                    for line in exp_lines
+                    if line.startswith("- ") or line.startswith("→ ")
+                ]
                 if exp_entries:
                     block += "#### 经验教训\n"
                     for line in exp_entries[:10]:

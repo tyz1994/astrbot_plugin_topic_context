@@ -1,7 +1,6 @@
 """存储管理器：读写 topics_index.json、conversation_log.json、core.md、experience.md、fragments/。"""
 
 import json
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -68,6 +67,7 @@ class MemoryStore:
         topic_dir = self.topic_dir(umo, topic_id)
         if topic_dir.exists():
             import shutil
+
             shutil.rmtree(topic_dir, ignore_errors=True)
 
     # ─── conversation_log.json（每主题原始对话日志） ───
@@ -84,9 +84,7 @@ class MemoryStore:
         log["rounds"].append(round_data)
         await self._write_json(path, log)
 
-    async def load_conversation_log(
-        self, umo: str, topic_id: str
-    ) -> list[dict]:
+    async def load_conversation_log(self, umo: str, topic_id: str) -> list[dict]:
         """加载某主题的对话日志，按 timestamp 排序。"""
         path = self.topic_dir(umo, topic_id) / "conversation_log.json"
         if not path.exists():
@@ -155,7 +153,9 @@ class MemoryStore:
     def fragment_path(self, umo: str, topic_id: str, fragment_id: str) -> Path:
         return self.fragments_dir(umo, topic_id) / f"{fragment_id}.json"
 
-    async def load_fragment(self, umo: str, topic_id: str, fragment_id: str) -> dict | None:
+    async def load_fragment(
+        self, umo: str, topic_id: str, fragment_id: str
+    ) -> dict | None:
         path = self.fragment_path(umo, topic_id, fragment_id)
         if not path.exists():
             return None
@@ -220,7 +220,7 @@ class MemoryStore:
         if source_core and fragment_id in source_core:
             # 移除包含该 fragment_id 的行
             lines = source_core.split("\n")
-            new_lines = [l for l in lines if fragment_id not in l]
+            new_lines = [line for line in lines if fragment_id not in line]
             await self.save_core_md(umo, source_topic_id, "\n".join(new_lines))
 
         # 向目标 core.md 的「最近记忆」追加该片段条目
@@ -233,7 +233,10 @@ class MemoryStore:
             else:
                 target_core = target_core.rstrip("\n") + "\n\n## 最近记忆\n" + new_entry
         else:
-            target_core = f"# 主题: {target_topic['name']}\n\n## 概述\n\n## 关键信息\n\n## 最近记忆\n" + new_entry
+            target_core = (
+                f"# 主题: {target_topic['name']}\n\n## 概述\n\n## 关键信息\n\n## 最近记忆\n"
+                + new_entry
+            )
         await self.save_core_md(umo, target_topic_id, target_core)
 
     async def search_fragments_by_keyword(
@@ -285,8 +288,9 @@ class MemoryStore:
     def generate_topic_id(topic_name: str) -> str:
         """将主题名转为安全的目录名。"""
         import re
+
         # 简单的拼音/英文保留，其他特殊字符移除或替换
-        safe = re.sub(r'[^\w\u4e00-\u9fff]', '_', topic_name).strip('_')
+        safe = re.sub(r"[^\w\u4e00-\u9fff]", "_", topic_name).strip("_")
         # 限制长度
         return safe[:64] if safe else f"topic_{datetime.now().strftime('%Y%m%d%H%M%S')}"
 
@@ -327,6 +331,7 @@ class MemoryStore:
     async def create_empty_topic(self, umo: str, name: str) -> dict:
         """创建一个空主题，返回主题条目字典。"""
         from datetime import datetime
+
         topic_id = self.generate_topic_id(name)
         now = datetime.now().isoformat()
 
@@ -354,4 +359,6 @@ class MemoryStore:
 
     async def _write_json(self, path: Path, data: Any) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        path.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
