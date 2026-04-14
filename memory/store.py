@@ -297,14 +297,22 @@ class MemoryStore:
     # ─── 主题重命名（同步三处） ───
 
     async def rename_topic(self, umo: str, old_topic_id: str, new_name: str) -> None:
-        """重命名主题：同步更新 index、文件夹名、片段中的 topic 字段。"""
+        """重命名主题：同步更新 index、文件夹名、片段中的 topic 字段，以及 core.md / experience.md 标题。"""
         import shutil
 
         new_topic_id = self.generate_topic_id(new_name)
         udir = self.user_dir(umo)
 
-        # 1. 更新 topics_index.json 中的 name 和 id
+        # 0. 检查新名称是否与已有主题冲突（排除自身）
         index = await self.load_topics_index(umo)
+        old_name = None
+        for t in index["topics"]:
+            if t["id"] == old_topic_id:
+                old_name = t["name"]
+            elif t["name"] == new_name:
+                raise ValueError("该主题名已存在")
+
+        # 1. 更新 topics_index.json 中的 name 和 id
         for t in index["topics"]:
             if t["id"] == old_topic_id:
                 t["name"] = new_name
@@ -316,8 +324,6 @@ class MemoryStore:
         old_dir = udir / old_topic_id
         new_dir = udir / new_topic_id
         if old_dir.exists() and old_dir != new_dir:
-            if new_dir.exists():
-                shutil.rmtree(new_dir, ignore_errors=True)
             shutil.move(str(old_dir), str(new_dir))
 
         # 3. 更新所有片段中的 topic 字段
@@ -325,6 +331,26 @@ class MemoryStore:
         for frag in fragments:
             frag["topic"] = new_name
             await self.save_fragment(umo, new_topic_id, frag)
+
+        # 4. 更新 core.md 和 experience.md 中的主题标题
+        if old_name and old_name != new_name:
+            core = await self.load_core_md(umo, new_topic_id)
+            if core:
+                core = core.replace(
+                    f"# 主题: {old_name}\n",
+                    f"# 主题: {new_name}\n",
+                    1,
+                )
+                await self.save_core_md(umo, new_topic_id, core)
+
+            exp = await self.load_experience_md(umo, new_topic_id)
+            if exp:
+                exp = exp.replace(
+                    f"# 主题: {old_name} - 经验教训\n",
+                    f"# 主题: {new_name} - 经验教训\n",
+                    1,
+                )
+                await self.save_experience_md(umo, new_topic_id, exp)
 
     # ─── 创建空主题 ───
 

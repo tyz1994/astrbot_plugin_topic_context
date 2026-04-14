@@ -154,7 +154,10 @@ class WebUIServer:
             new_name = body.get("name", "")
             if not new_name:
                 raise HTTPException(400, "名称不能为空")
-            await self.store.rename_topic(umo, topic_id, new_name)
+            try:
+                await self.store.rename_topic(umo, topic_id, new_name)
+            except ValueError as e:
+                raise HTTPException(409, str(e))
             return {"ok": True}
 
         @self._app.delete("/api/users/{umo}/topics/{topic_id}")
