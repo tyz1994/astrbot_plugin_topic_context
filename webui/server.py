@@ -2,6 +2,7 @@
 
 import asyncio
 import secrets
+import time
 from pathlib import Path
 
 import uvicorn
@@ -21,14 +22,15 @@ class WebUIServer:
         self.config = config
         self.llm_caller = llm_caller
         self.dream_mgr = DreamManager(llm_caller, store) if llm_caller else None
-        self.host = "0.0.0.0"
+        self.host = config.get("webui_host", "127.0.0.1")
         self.port = config.get("webui_port", 8900)
         self._password = config.get("webui_password", "")
         if not self._password:
             self._password = secrets.token_urlsafe(16)
             logger.info(f"[WebUI] 自动生成访问密码: {self._password}")
 
-        self._tokens: dict[str, str] = {}  # token -> "user"
+        self._tokens: dict[str, float] = {}  # token -> 创建时的 monotonic 时间戳
+        self._token_ttl: float = 12 * 3600  # 12 小时过期
         self._app = FastAPI(title="TopicContext Memory", docs_url=None, redoc_url=None)
         self._server = None
         self._server_task = None
@@ -55,14 +57,17 @@ class WebUIServer:
             if body.get("password") != self._password:
                 raise HTTPException(401, "密码错误")
             token = secrets.token_urlsafe(32)
-            self._tokens[token] = "admin"
+            self._tokens[token] = time.monotonic()
+            self._cleanup_expired_tokens()
             return {"token": token}
 
         async def auth_dep(request: Request) -> str:
             auth = request.headers.get("Authorization", "")
             token = auth[7:] if auth.startswith("Bearer ") else ""
-            if token not in self._tokens:
-                raise HTTPException(401, "未认证")
+            created_at = self._tokens.get(token)
+            if created_at is None or time.monotonic() - created_at > self._token_ttl:
+                self._tokens.pop(token, None)
+                raise HTTPException(401, "认证已过期，请重新登录")
             return token
 
         # ─── 用户列表 ───
@@ -299,6 +304,17 @@ class WebUIServer:
                         }
                     )
             return {"results": results}
+
+    # ─── Token 管理 ───
+
+    def _cleanup_expired_tokens(self):
+        """清理过期的认证 token。"""
+        now = time.monotonic()
+        expired = [
+            k for k, ts in self._tokens.items() if now - ts > self._token_ttl
+        ]
+        for k in expired:
+            del self._tokens[k]
 
     # ─── 生命周期 ───
 
