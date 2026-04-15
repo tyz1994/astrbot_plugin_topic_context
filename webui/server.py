@@ -314,9 +314,7 @@ class WebUIServer:
     def _cleanup_expired_tokens(self):
         """清理过期的认证 token。"""
         now = time.monotonic()
-        expired = [
-            k for k, ts in self._tokens.items() if now - ts > self._token_ttl
-        ]
+        expired = [k for k, ts in self._tokens.items() if now - ts > self._token_ttl]
         for k in expired:
             del self._tokens[k]
 
