@@ -17,6 +17,29 @@ class ColdStarter:
         self.store = store
 
     @staticmethod
+    def _parse_datetime(ts) -> datetime | None:
+        """将各种时间格式统一解析为 aware UTC datetime。
+
+        支持 int/float Unix 时间戳、str ISO 格式（含 Z 后缀）和 datetime 对象。
+        """
+        try:
+            if isinstance(ts, (int, float)):
+                return datetime.fromtimestamp(ts, tz=timezone.utc)
+            if isinstance(ts, str):
+                ts = ts.replace("Z", "+00:00")
+                dt = datetime.fromisoformat(ts)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt
+            if isinstance(ts, datetime):
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                return ts
+        except Exception:
+            pass
+        return None
+
+    @staticmethod
     def _extract_text(content) -> str:
         """从消息 content 中提取纯文本。
 
@@ -85,18 +108,9 @@ class ColdStarter:
             try:
                 updated = getattr(conv, "updated_at", None)
                 created = getattr(conv, "created_at", None)
-                ts = updated or created
-                if ts:
-                    # v1: int Unix 时间戳；v2: aware UTC datetime
-                    if isinstance(ts, (int, float)):
-                        ts = datetime.fromtimestamp(ts, tz=timezone.utc)
-                    elif isinstance(ts, str):
-                        ts = datetime.fromisoformat(ts)
-                    # naive 视为 UTC（兼容旧数据），确保双方均为 aware 再比较
-                    if ts.tzinfo is None:
-                        ts = ts.replace(tzinfo=timezone.utc)
-                    if ts >= cutoff:
-                        filtered_convs.append(conv)
+                ts = self._parse_datetime(updated or created)
+                if ts and ts >= cutoff:
+                    filtered_convs.append(conv)
             except Exception as e:
                 logger.warning(f"[ColdStart] 解析对话时间失败: {e}")
                 continue
@@ -144,13 +158,9 @@ class ColdStarter:
                 for ts_field in ("created_at", "updated_at"):
                     ts_val = getattr(conv, ts_field, None)
                     if ts_val is not None:
-                        if isinstance(ts_val, (int, float)):
-                            conv_ts = datetime.fromtimestamp(ts_val).isoformat()
-                        elif isinstance(ts_val, str):
-                            conv_ts = ts_val
-                        elif hasattr(ts_val, "isoformat"):
-                            conv_ts = ts_val.isoformat()
-                        if conv_ts:
+                        dt = self._parse_datetime(ts_val)
+                        if dt:
+                            conv_ts = dt.isoformat()
                             break
 
                 # 相邻 user+assistant 配对（跳过指令型消息）
