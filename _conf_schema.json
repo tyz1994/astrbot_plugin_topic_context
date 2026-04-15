@@ -1,68 +1,68 @@
 {
   "enabled": {
     "type": "bool",
-    "title": "启用记忆功能",
     "default": true,
-    "description": "是否启用基于主题的记忆上下文管理功能"
+    "description": "记忆上下文管理",
+    "hint": "启用基于主题的记忆上下文管理功能，自动总结对话并按主题组织记忆。"
   },
   "experience_detect_enabled": {
     "type": "bool",
-    "title": "启用隐式负反馈检测",
     "default": true,
-    "description": "是否自动检测用户消息中的负反馈信号"
+    "description": "隐式负反馈检测",
+    "hint": "自动检测用户消息中的负反馈信号（如否定、不满等），据此调整记忆权重。"
   },
   "inject_budget": {
     "type": "int",
-    "title": "注入字符数上限",
     "default": 4000,
-    "description": "注入 system_prompt 的记忆内容最大字符数（近似 token 数），超出按主题均分后截断。设为 0 表示不限制。"
+    "description": "注入字符数上限",
+    "hint": "注入 system_prompt 的记忆内容最大字符数（近似 token 数），超出按主题均分后截断。设为 0 表示不限制。"
   },
   "dream_enabled": {
     "type": "bool",
-    "title": "启用 Dream 整理",
     "default": true,
-    "description": "是否启用定时记忆整理（Dream 机制）"
+    "description": "Dream 记忆整理",
+    "hint": "启用定时记忆整理（Dream 机制），在空闲时段自动清理和合并记忆。"
   },
   "dream_hour": {
     "type": "int",
-    "title": "Dream 执行时间",
     "default": 2,
-    "description": "每天执行 Dream 的小时（24小时制），建议在空闲时段"
+    "description": "Dream 执行时间",
+    "hint": "每天执行 Dream 的小时（24小时制），建议在空闲时段（如凌晨 2 点）。"
   },
   "webui_enabled": {
     "type": "bool",
-    "title": "启用 WebUI",
     "default": true,
-    "description": "是否启用记忆管理 WebUI 控制台"
+    "description": "WebUI 管理面板",
+    "hint": "启用记忆管理 WebUI 控制台，可通过浏览器查看和管理记忆。"
   },
   "webui_port": {
     "type": "int",
-    "title": "WebUI 端口",
     "default": 8900,
-    "description": "WebUI 服务端口，确保不与 AstrBot 主端口冲突"
+    "description": "WebUI 端口",
+    "hint": "WebUI 服务端口，确保不与 AstrBot 主端口（默认 6185）冲突。"
   },
   "webui_password": {
     "type": "string",
-    "title": "WebUI 访问密码",
     "default": "",
-    "description": "WebUI 登录密码，留空则自动生成并打印在日志中"
+    "description": "WebUI 访问密码",
+    "hint": "WebUI 登录密码。留空则自动生成随机密码并打印在日志中。"
   },
   "provider_settings": {
     "type": "object",
-    "title": "模型配置",
-    "description": "配置记忆系统使用的 AI 模型",
+    "description": "模型提供商",
+    "hint": "配置记忆系统使用的 AI 模型",
     "items": {
       "summary_provider_id": {
         "type": "string",
-        "title": "记忆总结模型",
-        "description": "用于对话总结、主题提取、片段合并判定的模型 ID。留空使用 AstrBot 默认。推荐使用推理能力较强的模型。",
+        "description": "记忆总结模型",
+        "hint": "用于对话总结、主题提取、片段合并判定的模型 ID。留空使用 AstrBot 默认。推荐使用推理能力较强的模型。",
         "default": "",
         "_special": "select_provider"
       },
       "topic_match_provider_id": {
         "type": "string",
-        "title": "主题匹配模型",
-        "description": "用于识别用户消息主题的模型 ID。留空使用 AstrBot 默认。推荐使用无思考模式的小模型以降低延迟。",
+        "description": "主题匹配模型",
+        "hint": "用于识别用户消息主题的模型 ID。留空使用 AstrBot 默认。推荐使用无思考模式的小模型以降低延迟。",
         "default": "",
         "_special": "select_provider"
       }
