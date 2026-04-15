@@ -84,25 +84,37 @@ class FragmentMerger:
             for r in latest_rounds
         )
 
-        # 基础提示词
-        prompt = f"""请判断新的一轮对话是否应与已有记忆片段合并。
+        # 提取已有片段最后一轮对话原文，用于延续性判断
+        last_round_text = ""
+        if latest_rounds:
+            last = latest_rounds[-1]
+            last_round_text = f"[用户] {last.get('user_message', '')}\n[助手] {last.get('assistant_response', '')}"
 
-已有片段摘要: {latest_summary}（已包含 {latest_round_count} 轮对话）
-已有片段关键词: {', '.join(latest.get('keywords', [])) or '无'}
-新轮次摘要: {summary}
-新轮次关键词: {', '.join(keywords) or '无'}
+        # 提取当前轮次对话原文
+        current_round_text = f"[用户] {round_data.get('user_message', '')}\n[助手] {round_data.get('assistant_response', '')}"
 
-注意：新旧片段已属于同一主题，这不代表应该合并。合并的唯一标准是"是否属于同一次连续讨论"。
+        # 基础提示词：基于相邻轮次对话判断延续性
+        prompt = f"""请判断新的一轮对话是否与上一轮对话属于同一次连续讨论。
+
+上一轮对话（已有片段的最后一轮）：
+{last_round_text}
+
+新的一轮对话：
+{current_round_text}
+
+已有片段摘要（背景参考）: {latest_summary}（已包含 {latest_round_count} 轮对话）
+
+注意：两段对话已属于同一主题，这不代表应该合并。合并的唯一标准是"新轮次是否是上一轮的直接延续"。
 
 判定为 "new"（创建新片段）的场景（满足任一即 new）：
 - 讨论对象变更（如从"跑步减脂"转到"饮食控制"，即使都属于减重主题）
-- 之前的问题已经得到解答，用户开启了新的问题或方向
-- 新轮次引入了全新的子话题，与已有摘要的核心内容不重叠
-- 已有片段已构成一段完整讨论（问题提出→讨论→解决），新轮次是另起炉灶
+- 上一轮的问题已经得到解答，新轮次开启了新的问题或方向
+- 新轮次与上一轮讨论的不是同一个具体子话题
+- 上一轮对话已构成一段完整交流，新轮次是另起炉灶
 
 判定为 "merge" 的场景（必须同时满足）：
-- 新轮次与已有摘要讨论的是同一个具体问题或子话题
-- 新轮次是前文的直接延续（追问、补充细节、纠正、继续未完的讨论）
+- 新轮次与上一轮讨论的是同一个具体问题或子话题
+- 新轮次是上一轮的直接延续（追问、补充细节、纠正、继续未完的讨论）
 
 请返回如下 JSON 格式（不要包含 markdown 代码块标记）：
 {{
