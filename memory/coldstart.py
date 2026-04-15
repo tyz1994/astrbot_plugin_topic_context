@@ -1,6 +1,5 @@
 """冷启动：批量回放历史对话，复用 _process_round 逻辑构建初始记忆。"""
 
-import asyncio
 import json
 from datetime import datetime, timedelta, timezone
 
@@ -195,10 +194,6 @@ class ColdStarter:
                 )
 
             try:
-                # 限速
-                if i > 0:
-                    await asyncio.sleep(1)
-
                 await process_round_fn(
                     umo,
                     rnd["user_message"],
