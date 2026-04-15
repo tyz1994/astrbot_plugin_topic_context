@@ -10,8 +10,7 @@ from datetime import datetime, timedelta
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.provider import ProviderRequest
-from astrbot.api.star import Context, Star, register
-from astrbot.core.star.star_tools import StarTools
+from astrbot.api.star import Context, Star, StarTools, register
 
 from .memory.coldstart import ColdStarter  # noqa: F401 - 仅用于类型提示
 from .memory.context_injector import ContextInjector
