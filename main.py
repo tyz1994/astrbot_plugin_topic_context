@@ -14,7 +14,7 @@ from astrbot.api.provider import ProviderRequest
 from astrbot.api.star import Context, Star, StarTools, register
 
 from .memory.coldstart import ColdStarter  # noqa: F401 - 仅用于类型提示
-from .memory.context_injector import ContextInjector, DEFAULT_INJECT_BUDGET
+from .memory.context_injector import DEFAULT_INJECT_BUDGET, ContextInjector
 from .memory.debug_logger import LLMDebugLogger
 from .memory.dream import DreamManager
 from .memory.experience import ExperienceManager
