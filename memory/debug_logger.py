@@ -1,6 +1,7 @@
 """LLM 调用调试日志记录器：将每次 LLM 请求的输入、输出、耗时缓存到本地 debug 文件夹。"""
 
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -8,6 +9,8 @@ from typing import Any
 
 class LLMDebugLogger:
     """记录每次 LLM 调用的完整信息到 debug 目录。"""
+
+    MAX_DEBUG_FILES = 5
 
     def __init__(self, data_dir: Path):
         self.debug_dir = data_dir / "debug"
@@ -41,7 +44,7 @@ class LLMDebugLogger:
         """
         now = datetime.now()
         ts = now.strftime("%Y%m%d_%H%M%S") + f"_{now.microsecond // 1000:03d}"
-        safe_caller = caller.replace("/", "_").replace(" ", "_")
+        safe_caller = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", caller)
         filename = f"{ts}_{safe_caller}.json"
         filepath = self.debug_dir / filename
 
@@ -67,4 +70,10 @@ class LLMDebugLogger:
             json.dumps(record, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+
+        # 清理旧文件，仅保留最近 MAX_DEBUG_FILES 条
+        existing = sorted(self.debug_dir.glob("*.json"), key=lambda f: f.stat().st_mtime)
+        for old in existing[: -self.MAX_DEBUG_FILES]:
+            old.unlink()
+
         return filepath
