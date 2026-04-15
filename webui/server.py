@@ -197,6 +197,10 @@ class WebUIServer:
                 )
             except FileNotFoundError as e:
                 raise HTTPException(404, str(e))
+            except FileExistsError as e:
+                raise HTTPException(409, str(e))
+            except ValueError as e:
+                raise HTTPException(400, str(e))
             return {"ok": True}
 
         # ─── 合并主题 ───
