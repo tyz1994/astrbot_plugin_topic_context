@@ -547,7 +547,7 @@ class TopicContextPlugin(Star):
     ) -> None:
         """更新 core.md：首次创建时构建完整内容，后续更新概述/关键信息/最近记忆。"""
         core = await self.store.load_core_md(umo, topic_id)
-        fragment_id = fragment_id or MemoryStore.generate_fragment_id(ts)
+        fragment_id = fragment_id or MemoryStore.generate_fragment_id()
         date_str = (
             datetime.fromisoformat(ts).strftime("%Y-%m-%d")
             if ts

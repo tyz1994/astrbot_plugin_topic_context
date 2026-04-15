@@ -216,7 +216,7 @@ class FragmentMerger:
         """
         frag_ts = ts or datetime.now().isoformat()
         fragment = {
-            "id": MemoryStore.generate_fragment_id(frag_ts),
+            "id": MemoryStore.generate_fragment_id(),
             "created_at": frag_ts,
             "updated_at": frag_ts,
             "topic": topic_name,

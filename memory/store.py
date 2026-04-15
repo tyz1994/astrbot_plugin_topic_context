@@ -1,6 +1,8 @@
 """存储管理器：读写 topics_index.json、conversation_log.json、core.md、experience.md、fragments/。"""
 
+import asyncio
 import json
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -13,6 +15,30 @@ class MemoryStore:
         self.data_dir = data_dir
         # 确保数据目录存在
         self.data_dir.mkdir(parents=True, exist_ok=True)
+        # 并发控制：按 umo 隔离的 topics_index 锁，按 (umo, topic_id) 隔离的对话日志锁
+        self._topic_index_locks: dict[str, asyncio.Lock] = {}
+        self._conv_log_locks: dict[str, asyncio.Lock] = {}
+        self._global_lock = asyncio.Lock()  # 保护 _topic_index_locks / _conv_log_locks 字典本身
+
+    def _get_topic_index_lock(self, umo: str) -> asyncio.Lock:
+        if umo not in self._topic_index_locks:
+            # 在全局锁保护下创建，避免并发创建同一 key 的锁
+            loop = asyncio.get_running_loop()
+            if loop.is_running():
+                self._topic_index_locks.setdefault(umo, asyncio.Lock())
+            else:
+                self._topic_index_locks[umo] = asyncio.Lock()
+        return self._topic_index_locks[umo]
+
+    def _get_conv_log_lock(self, umo: str, topic_id: str) -> asyncio.Lock:
+        key = f"{umo}:{topic_id}"
+        if key not in self._conv_log_locks:
+            loop = asyncio.get_running_loop()
+            if loop.is_running():
+                self._conv_log_locks.setdefault(key, asyncio.Lock())
+            else:
+                self._conv_log_locks[key] = asyncio.Lock()
+        return self._conv_log_locks[key]
 
     # ─── 用户数据目录 ───
 
@@ -47,23 +73,29 @@ class MemoryStore:
         return None
 
     async def add_topic(self, umo: str, topic: dict) -> None:
-        index = await self.load_topics_index(umo)
-        index["topics"].append(topic)
-        await self.save_topics_index(umo, index)
+        lock = self._get_topic_index_lock(umo)
+        async with lock:
+            index = await self.load_topics_index(umo)
+            index["topics"].append(topic)
+            await self.save_topics_index(umo, index)
 
     async def update_topic(self, umo: str, topic_id: str, updates: dict) -> None:
-        index = await self.load_topics_index(umo)
-        for t in index["topics"]:
-            if t["id"] == topic_id:
-                t.update(updates)
-                break
-        await self.save_topics_index(umo, index)
+        lock = self._get_topic_index_lock(umo)
+        async with lock:
+            index = await self.load_topics_index(umo)
+            for t in index["topics"]:
+                if t["id"] == topic_id:
+                    t.update(updates)
+                    break
+            await self.save_topics_index(umo, index)
 
     async def remove_topic(self, umo: str, topic_id: str) -> None:
-        index = await self.load_topics_index(umo)
-        index["topics"] = [t for t in index["topics"] if t["id"] != topic_id]
-        await self.save_topics_index(umo, index)
-        # 删除主题目录
+        lock = self._get_topic_index_lock(umo)
+        async with lock:
+            index = await self.load_topics_index(umo)
+            index["topics"] = [t for t in index["topics"] if t["id"] != topic_id]
+            await self.save_topics_index(umo, index)
+        # 删除主题目录（在锁外执行，避免长时间持锁）
         topic_dir = self.topic_dir(umo, topic_id)
         if topic_dir.exists():
             import shutil
@@ -76,13 +108,15 @@ class MemoryStore:
         self, umo: str, topic_id: str, round_data: dict
     ) -> None:
         """向某主题的对话日志追加一轮原始对话。"""
-        path = self.topic_dir(umo, topic_id) / "conversation_log.json"
-        if not path.exists():
-            log = {"rounds": []}
-        else:
-            log = await self._read_json(path)
-        log["rounds"].append(round_data)
-        await self._write_json(path, log)
+        lock = self._get_conv_log_lock(umo, topic_id)
+        async with lock:
+            path = self.topic_dir(umo, topic_id) / "conversation_log.json"
+            if not path.exists():
+                log = {"rounds": []}
+            else:
+                log = await self._read_json(path)
+            log["rounds"].append(round_data)
+            await self._write_json(path, log)
 
     async def load_conversation_log(self, umo: str, topic_id: str) -> list[dict]:
         """加载某主题的对话日志，按 timestamp 排序。"""
@@ -204,14 +238,21 @@ class MemoryStore:
         if not target_topic:
             raise FileNotFoundError(f"目标主题 {target_topic_id} 不存在")
 
-        # 3. 更新片段的 topic 字段并保存到目标
+        # 3. 检查目标主题是否已存在同 ID 片段，避免覆盖
+        existing = await self.load_fragment(umo, target_topic_id, fragment_id)
+        if existing:
+            raise FileExistsError(
+                f"目标主题中已存在同名片段 {fragment_id}，请先删除或重命名"
+            )
+
+        # 4. 更新片段的 topic 字段并保存到目标
         frag["topic"] = target_topic["name"]
         await self.save_fragment(umo, target_topic_id, frag)
 
-        # 4. 从源主题删除片段
+        # 5. 从源主题删除片段
         await self.delete_fragment(umo, source_topic_id, fragment_id)
 
-        # 5. 同步 core.md
+        # 6. 同步 core.md
         frag_summary = frag.get("summary", "")
         frag_date = frag.get("created_at", "")[:10] if frag.get("created_at") else ""
 
@@ -272,15 +313,8 @@ class MemoryStore:
     # ─── 生成唯一片段 ID ───
 
     @staticmethod
-    def generate_fragment_id(ts: str = "") -> str:
-        if ts:
-            try:
-                dt = datetime.fromisoformat(ts)
-                return f"{dt.strftime('%Y-%m-%d_%H%M%S')}_{dt.microsecond // 1000:03d}"
-            except (ValueError, TypeError):
-                pass
-        now = datetime.now()
-        return f"{now.strftime('%Y-%m-%d_%H%M%S')}_{now.microsecond // 1000:03d}"
+    def generate_fragment_id() -> str:
+        return uuid.uuid4().hex[:12]
 
     # ─── 生成主题 ID（从名称派生） ───
 
@@ -303,22 +337,29 @@ class MemoryStore:
         new_topic_id = self.generate_topic_id(new_name)
         udir = self.user_dir(umo)
 
-        # 0. 检查新名称是否与已有主题冲突（排除自身）
-        index = await self.load_topics_index(umo)
-        old_name = None
-        for t in index["topics"]:
-            if t["id"] == old_topic_id:
-                old_name = t["name"]
-            elif t["name"] == new_name:
-                raise ValueError("该主题名已存在")
+        lock = self._get_topic_index_lock(umo)
+        async with lock:
+            # 0. 检查新名称是否与已有主题冲突（排除自身）
+            index = await self.load_topics_index(umo)
+            old_name = None
+            found = False
+            for t in index["topics"]:
+                if t["id"] == old_topic_id:
+                    old_name = t["name"]
+                    found = True
+                elif t["name"] == new_name:
+                    raise ValueError("该主题名已存在")
 
-        # 1. 更新 topics_index.json 中的 name 和 id
-        for t in index["topics"]:
-            if t["id"] == old_topic_id:
-                t["name"] = new_name
-                t["id"] = new_topic_id
-                break
-        await self.save_topics_index(umo, index)
+            if not found:
+                raise ValueError(f"主题 {old_topic_id} 不存在")
+
+            # 1. 更新 topics_index.json 中的 name 和 id
+            for t in index["topics"]:
+                if t["id"] == old_topic_id:
+                    t["name"] = new_name
+                    t["id"] = new_topic_id
+                    break
+            await self.save_topics_index(umo, index)
 
         # 2. 重命名文件夹（直接用路径，避免 topic_dir 自动 mkdir）
         old_dir = udir / old_topic_id
