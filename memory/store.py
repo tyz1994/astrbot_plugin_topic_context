@@ -276,11 +276,11 @@ class MemoryStore:
         if ts:
             try:
                 dt = datetime.fromisoformat(ts)
-                return f"{dt.strftime('%Y-%m-%d_%H%M%S')}"
+                return f"{dt.strftime('%Y-%m-%d_%H%M%S')}_{dt.microsecond // 1000:03d}"
             except (ValueError, TypeError):
                 pass
         now = datetime.now()
-        return f"{now.strftime('%Y-%m-%d_%H%M%S')}"
+        return f"{now.strftime('%Y-%m-%d_%H%M%S')}_{now.microsecond // 1000:03d}"
 
     # ─── 生成主题 ID（从名称派生） ───
 
