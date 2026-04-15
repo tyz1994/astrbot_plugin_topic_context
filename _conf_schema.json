@@ -11,6 +11,12 @@
     "default": true,
     "description": "是否自动检测用户消息中的负反馈信号"
   },
+  "inject_budget": {
+    "type": "int",
+    "title": "注入字符数上限",
+    "default": 4000,
+    "description": "注入 system_prompt 的记忆内容最大字符数（近似 token 数），超出按主题均分后截断。设为 0 表示不限制。"
+  },
   "dream_enabled": {
     "type": "bool",
     "title": "启用 Dream 整理",

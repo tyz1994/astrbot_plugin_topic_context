@@ -14,7 +14,7 @@ from astrbot.api.provider import ProviderRequest
 from astrbot.api.star import Context, Star, StarTools, register
 
 from .memory.coldstart import ColdStarter  # noqa: F401 - 仅用于类型提示
-from .memory.context_injector import ContextInjector
+from .memory.context_injector import ContextInjector, DEFAULT_INJECT_BUDGET
 from .memory.debug_logger import LLMDebugLogger
 from .memory.dream import DreamManager
 from .memory.experience import ExperienceManager
@@ -563,6 +563,24 @@ class TopicContextPlugin(Star):
         return "\n".join(new_lines)
 
     @staticmethod
+    def _find_section_range(lines: list[str], heading: str) -> tuple[int, int] | None:
+        """找到首个 ## heading 的范围 (heading_idx, end_idx)。不存在返回 None。"""
+        target = f"## {heading}"
+        heading_idx = None
+        for i, line in enumerate(lines):
+            if line.strip() == target:
+                heading_idx = i
+                break
+        if heading_idx is None:
+            return None
+        end_idx = len(lines)
+        for i in range(heading_idx + 1, len(lines)):
+            if lines[i].startswith("## "):
+                end_idx = i
+                break
+        return heading_idx, end_idx
+
+    @staticmethod
     def _append_to_section(content: str, heading: str, text: str) -> str:
         """在 markdown 中首个匹配 ## heading 的节标题后追加文本。
 
@@ -581,6 +599,31 @@ class TopicContextPlugin(Star):
             return content.rstrip() + f"\n\n{target}\n{text}\n"
 
         lines.insert(heading_idx + 1, text)
+        return "\n".join(lines)
+
+    @staticmethod
+    def _prepend_to_section(content: str, heading: str, text: str) -> str:
+        """在 markdown 中首个匹配 ## heading 的节标题后、已有正文之前插入文本（最新在前）。
+
+        - 若该标题不存在，在文件末尾追加 ``## heading\\n{text}``。
+        - 只匹配首个出现。
+        """
+        target = f"## {heading}"
+        lines = content.split("\n")
+        heading_idx = None
+        for i, line in enumerate(lines):
+            if line.strip() == target:
+                heading_idx = i
+                break
+
+        if heading_idx is None:
+            return content.rstrip() + f"\n\n{target}\n{text}\n"
+
+        # 找到该节正文的起始位置（跳过标题行和紧随的空行）
+        insert_idx = heading_idx + 1
+        while insert_idx < len(lines) and lines[insert_idx].strip() == "":
+            insert_idx += 1
+        lines.insert(insert_idx, text)
         return "\n".join(lines)
 
     async def _update_core_md(
@@ -627,22 +670,35 @@ class TopicContextPlugin(Star):
                 core = self._append_to_section(core, "关键信息", key_info)
 
             if is_merge:
-                # 合并：找到已有条目，更新其摘要文本
+                # 合并：找到已有条目，更新其摘要文本并移到节顶部（最新在前）
                 lines = core.split("\n")
                 updated = False
                 for i, line in enumerate(lines):
                     if f"(ID: {fragment_id})" in line:
-                        lines[i] = f"- [{date_str}] {new_summary} (ID: {fragment_id})"
+                        new_line = f"- [{date_str}] {new_summary} (ID: {fragment_id})"
+                        lines[i] = new_line
+                        # 移到节顶部：先删除当前位置，再插入到标题后
+                        lines.pop(i)
+                        rng = self._find_section_range(lines, "最近记忆")
+                        if rng:
+                            insert_pos = rng[0] + 1
+                            # 跳过紧随标题的空行
+                            while insert_pos < len(lines) and lines[insert_pos].strip() == "":
+                                insert_pos += 1
+                            lines.insert(insert_pos, new_line)
                         updated = True
                         break
                 if not updated:
-                    # 兜底：找不到已有条目时追加
-                    lines.append(f"- [{date_str}] {new_summary} (ID: {fragment_id})")
-                core = "\n".join(lines)
+                    # 兜底：找不到已有条目时，插入到节顶部
+                    core = self._prepend_to_section(
+                        core, "最近记忆", f"- [{date_str}] {new_summary} (ID: {fragment_id})"
+                    )
+                else:
+                    core = "\n".join(lines)
             else:
-                # 新建：追加到"最近记忆"部分
-                new_entry = f"- [{date_str}] {new_summary} (ID: {fragment_id})\n"
-                core = self._append_to_section(core, "最近记忆", new_entry.rstrip("\n"))
+                # 新建：插入到"最近记忆"部分顶部（最新在前）
+                new_entry = f"- [{date_str}] {new_summary} (ID: {fragment_id})"
+                core = self._prepend_to_section(core, "最近记忆", new_entry)
 
         await self.store.save_core_md(umo, topic_id, core)
 
@@ -689,10 +745,12 @@ class TopicContextPlugin(Star):
 
                 # 2. 在 system_prompt 后追加所有匹配主题的 core + experience
                 #    不替换 req.contexts，保留主框架的短期记忆
+                budget = config.get("inject_budget", DEFAULT_INJECT_BUDGET) or 0
                 req.system_prompt = await self.context_injector.inject(
                     umo=umo,
                     matched_topics=matched_topics,
                     system_prompt=req.system_prompt,
+                    budget=budget,
                 )
 
             # 记录结果到 debug

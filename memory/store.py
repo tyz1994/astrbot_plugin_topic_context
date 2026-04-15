@@ -232,19 +232,34 @@ class MemoryStore:
             new_lines = [line for line in lines if fragment_id not in line]
             await self.save_core_md(umo, source_topic_id, "\n".join(new_lines))
 
-        # 向目标 core.md 的「最近记忆」追加该片段条目
+        # 向目标 core.md 的「最近记忆」顶部插入该片段条目（最新在前）
         target_core = await self.load_core_md(umo, target_topic_id)
-        new_entry = f"- [{frag_date}] {frag_summary} (ID: {fragment_id})\n"
+        new_entry = f"- [{frag_date}] {frag_summary} (ID: {fragment_id})"
         if target_core:
-            # 找到 ## 最近记忆 部分，追加到末尾；如果没有该节则追加到文件末尾
             if "## 最近记忆" in target_core:
-                target_core = target_core.rstrip("\n") + "\n" + new_entry
+                # 插入到 ## 最近记忆 标题之后、已有条目之前
+                lines = target_core.split("\n")
+                inserted = False
+                for i, line in enumerate(lines):
+                    if line.strip() == "## 最近记忆":
+                        # 跳过紧随标题的空行
+                        insert_pos = i + 1
+                        while insert_pos < len(lines) and lines[insert_pos].strip() == "":
+                            insert_pos += 1
+                        lines.insert(insert_pos, new_entry)
+                        inserted = True
+                        break
+                if inserted:
+                    target_core = "\n".join(lines)
+                else:
+                    target_core += f"\n\n## 最近记忆\n{new_entry}\n"
             else:
-                target_core = target_core.rstrip("\n") + "\n\n## 最近记忆\n" + new_entry
+                target_core = target_core.rstrip("\n") + "\n\n## 最近记忆\n" + new_entry + "\n"
         else:
             target_core = (
                 f"# 主题: {target_topic['name']}\n\n## 概述\n\n## 关键信息\n\n## 最近记忆\n"
                 + new_entry
+                + "\n"
             )
         await self.save_core_md(umo, target_topic_id, target_core)
 
