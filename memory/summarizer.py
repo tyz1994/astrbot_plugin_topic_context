@@ -153,15 +153,34 @@ class Summarizer:
 
             data = json.loads(result_text)
 
+            # 类型校验与清洗：LLM 返回的 JSON 字段类型不可信
+            def _bool(v, default=False) -> bool:
+                if isinstance(v, bool):
+                    return v
+                if isinstance(v, str):
+                    return v.lower() in ("true", "1", "yes")
+                return default
+
+            def _str(v, default="") -> str:
+                return str(v) if v is not None else default
+
+            def _str_list(v) -> list[str]:
+                if isinstance(v, list):
+                    return [str(item) for item in v if item is not None]
+                if isinstance(v, str):
+                    # LLM 可能返回逗号分隔的字符串而非列表
+                    return [s.strip() for s in v.split(",") if s.strip()]
+                return []
+
             return SummaryResult(
-                worth_remembering=data.get("worth_remembering", False),
-                topic_name=data.get("topic_name", ""),
-                summary=data.get("summary", ""),
-                keywords=data.get("keywords", []),
-                is_negative_feedback=data.get("is_negative_feedback", False),
-                negative_feedback_summary=data.get("negative_feedback_summary", ""),
-                overview=data.get("overview", ""),
-                key_info=data.get("key_info", ""),
+                worth_remembering=_bool(data.get("worth_remembering")),
+                topic_name=_str(data.get("topic_name")),
+                summary=_str(data.get("summary")),
+                keywords=_str_list(data.get("keywords")),
+                is_negative_feedback=_bool(data.get("is_negative_feedback")),
+                negative_feedback_summary=_str(data.get("negative_feedback_summary")),
+                overview=_str(data.get("overview")),
+                key_info=_str(data.get("key_info")),
             )
         except json.JSONDecodeError as e:
             logger.warning(
