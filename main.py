@@ -332,8 +332,8 @@ class TopicContextPlugin(Star):
             return
 
         # 从缓存获取用户消息（在 on_llm_request 中存入，以 span_id 为键）
-        span_id = event.span.span_id
-        entry = self._pending_user_messages.pop(span_id, None)
+        span_id = getattr(event, "span", None) and getattr(event.span, "span_id", None)
+        entry = self._pending_user_messages.pop(span_id, None) if span_id else None
         user_message = entry[0] if entry else ""
         logger.info(
             "[TopicContext] 缓存的用户消息: " + ("有" if user_message else "无")
@@ -531,6 +531,58 @@ class TopicContextPlugin(Star):
                 feedback_summary=summary_result.negative_feedback_summary,
             )
 
+    @staticmethod
+    def _replace_section(content: str, heading: str, new_body: str) -> str:
+        """替换 markdown 中首个匹配 ## heading 的节内容。
+
+        - 找到首个 ``## heading`` 后，替换其正文（到下一个同级标题或文件末尾）。
+        - 若不存在该标题，在文件末尾追加 ``## heading\\n{new_body}``。
+        - 只匹配首个出现，避免重复标题导致多次替换。
+        """
+        target = f"## {heading}"
+        lines = content.split("\n")
+        heading_idx = None
+        for i, line in enumerate(lines):
+            if line.strip() == target:
+                heading_idx = i
+                break
+
+        if heading_idx is None:
+            # 标题不存在，追加到末尾
+            return content.rstrip() + f"\n\n{target}\n{new_body}\n"
+
+        # 找到该节的结束位置：下一个同级标题（## ）或文件末尾
+        end_idx = len(lines)
+        for i in range(heading_idx + 1, len(lines)):
+            if lines[i].startswith("## "):
+                end_idx = i
+                break
+
+        # heading_idx 保留标题行，替换标题行之后、end_idx 之前的所有内容
+        new_lines = lines[: heading_idx + 1] + [new_body] + lines[end_idx:]
+        return "\n".join(new_lines)
+
+    @staticmethod
+    def _append_to_section(content: str, heading: str, text: str) -> str:
+        """在 markdown 中首个匹配 ## heading 的节标题后追加文本。
+
+        - 若该标题不存在，在文件末尾追加 ``## heading\\n{text}``。
+        - 只匹配首个出现，避免重复标题导致多次追加。
+        """
+        target = f"## {heading}"
+        lines = content.split("\n")
+        heading_idx = None
+        for i, line in enumerate(lines):
+            if line.strip() == target:
+                heading_idx = i
+                break
+
+        if heading_idx is None:
+            return content.rstrip() + f"\n\n{target}\n{text}\n"
+
+        lines.insert(heading_idx + 1, text)
+        return "\n".join(lines)
+
     async def _update_core_md(
         self,
         umo: str,
@@ -569,39 +621,10 @@ class TopicContextPlugin(Star):
         else:
             # 后续更新
             if overview:
-                # 替换概述部分
-                lines = core.split("\n")
-                new_lines = []
-                in_overview = False
-                for line in lines:
-                    if line.strip() == "## 概述":
-                        in_overview = True
-                        new_lines.append(line)
-                        new_lines.append(overview)
-                        continue
-                    if in_overview:
-                        if line.startswith("## "):
-                            in_overview = False
-                            new_lines.append(line)
-                        # 跳过原有概述内容
-                        continue
-                    new_lines.append(line)
-                core = "\n".join(new_lines)
+                core = self._replace_section(core, "概述", overview)
 
             if key_info:
-                # 追加关键信息到 ## 关键信息 部分
-                lines = core.split("\n")
-                new_lines = []
-                inserted = False
-                for line in lines:
-                    new_lines.append(line)
-                    if not inserted and line.strip() == "## 关键信息":
-                        new_lines.append(key_info)
-                        inserted = True
-                if inserted:
-                    core = "\n".join(new_lines)
-                else:
-                    core += f"\n\n## 关键信息\n{key_info}"
+                core = self._append_to_section(core, "关键信息", key_info)
 
             if is_merge:
                 # 合并：找到已有条目，更新其摘要文本
@@ -619,10 +642,7 @@ class TopicContextPlugin(Star):
             else:
                 # 新建：追加到"最近记忆"部分
                 new_entry = f"- [{date_str}] {new_summary} (ID: {fragment_id})\n"
-                if "## 最近记忆" in core:
-                    core = core.rstrip() + "\n" + new_entry
-                else:
-                    core += f"\n\n## 最近记忆\n{new_entry}"
+                core = self._append_to_section(core, "最近记忆", new_entry.rstrip("\n"))
 
         await self.store.save_core_md(umo, topic_id, core)
 
@@ -641,7 +661,10 @@ class TopicContextPlugin(Star):
             return
 
         # 缓存用户消息，供 on_llm_response 使用（以 span_id 为键，避免并发覆盖）
-        self._pending_user_messages[event.span.span_id] = (
+        span_id = getattr(event, "span", None) and getattr(event.span, "span_id", None)
+        if not span_id:
+            return
+        self._pending_user_messages[span_id] = (
             user_message,
             time.monotonic(),
         )
