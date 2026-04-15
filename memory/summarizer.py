@@ -16,6 +16,8 @@ class SummaryResult:
     keywords: list[str] = field(default_factory=list)
     is_negative_feedback: bool = False
     negative_feedback_summary: str = ""
+    overview: str = ""
+    key_info: str = ""
 
 
 class Summarizer:
@@ -59,19 +61,37 @@ class Summarizer:
                     core_md = await store.load_core_md(umo, t["id"])
                     if core_md:
                         lines = core_md.split("\n")
+                        # 加载概述
                         in_summary = False
                         summary_text = ""
+                        # 加载关键信息
+                        in_key_info = False
+                        key_info_text = ""
                         for line in lines:
                             if line.strip() == "## 概述":
                                 in_summary = True
+                                in_key_info = False
+                                continue
+                            if line.strip() == "## 关键信息":
+                                in_key_info = True
+                                in_summary = False
                                 continue
                             if in_summary:
                                 if line.startswith("## "):
-                                    break
-                                summary_text += line + "\n"
+                                    in_summary = False
+                                else:
+                                    summary_text += line + "\n"
+                            if in_key_info:
+                                if line.startswith("## "):
+                                    in_key_info = False
+                                else:
+                                    key_info_text += line + "\n"
                         summary_text = summary_text.strip()
                         if summary_text:
                             entry += f"\n  概述: {summary_text}"
+                        key_info_text = key_info_text.strip()
+                        if key_info_text:
+                            entry += f"\n  关键信息: {key_info_text}"
                 topic_lines.append(entry)
 
             topics_desc = "\n已有主题列表（请优先匹配）：\n" + "\n".join(topic_lines)
@@ -97,7 +117,9 @@ class Summarizer:
   "summary": "2-3句话的关键信息摘要",
   "keywords": ["关键词1", "关键词2", ...],
   "is_negative_feedback": true/false,
-  "negative_feedback_summary": "如果用户表达了不满或纠正，简述用户反馈的内容，否则为空字符串"
+  "negative_feedback_summary": "如果用户表达了不满或纠正，简述用户反馈的内容，否则为空字符串",
+  "overview": "如果本轮对话使得该主题的概述需要更新，输出更新后的完整概述。不需要更新则为空字符串。",
+  "key_info": "如果本轮对话包含值得记录的新关键信息（偏好、习惯、决定、里程碑等时效性不强的持久信息），以 - 开头输出新增条目，多条用换行分隔。不需要新增则为空字符串。"
 }}
 
 判断标准：
@@ -105,6 +127,8 @@ class Summarizer:
 - topic_name: 概括这轮对话的主题。如果已有主题列表中有匹配的主题，必须使用该主题的名称。如果没有匹配的已有主题，创建一个新名称。
 - is_negative_feedback: 如果用户表达了不满、纠正了错误、或者表示"不对"/"不是这样"等，返回 true。
 - negative_feedback_summary: 当 is_negative_feedback 为 true 时，总结用户不满的具体内容。
+- overview: 仅当本轮对话显著改变了主题的进展或状态时才更新。不需要频繁更新。
+- key_info: 只提取时效性不强的持久性信息。不要重复已有信息。宁可留空也不要凑数。
 
 重要：在 summary 中必须使用绝对日期（如"2025年3月15日"），禁止使用"今天"、"昨天"、"明天"、"上周"等相对时间。如果用户提到了相对时间，请根据当前对话日期换算为绝对日期后写入 summary。
 - 角色区分：用户消息中的称呼（如"某某，帮我..."）是用户在叫助手，不是用户的名字。summary 中统一用"用户"指代使用者，禁止把用户对助手的称呼当作用户名字写入 summary。"""
@@ -136,6 +160,8 @@ class Summarizer:
                 keywords=data.get("keywords", []),
                 is_negative_feedback=data.get("is_negative_feedback", False),
                 negative_feedback_summary=data.get("negative_feedback_summary", ""),
+                overview=data.get("overview", ""),
+                key_info=data.get("key_info", ""),
             )
         except json.JSONDecodeError as e:
             logger.warning(

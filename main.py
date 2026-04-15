@@ -555,6 +555,7 @@ class TopicContextPlugin(Star):
             ts=ts,
             fragment_id=actual_fragment_id,
             is_merge=is_merge,
+            summary_result=summary_result,
         )
 
         # 9. 经验提取（如果检测到负反馈）
@@ -580,11 +581,9 @@ class TopicContextPlugin(Star):
         ts: str = "",
         fragment_id: str = "",
         is_merge: bool = False,
+        summary_result=None,
     ) -> None:
-        """更新 core.md 的「最近记忆」部分。
-
-        新建片段时追加一行；合并时更新已有条目的摘要文本。
-        """
+        """更新 core.md：首次创建时构建完整内容，后续更新概述/关键信息/最近记忆。"""
         core = await self.store.load_core_md(umo, topic_id)
         fragment_id = fragment_id or MemoryStore.generate_fragment_id(ts)
         date_str = (
@@ -593,120 +592,79 @@ class TopicContextPlugin(Star):
             else datetime.now().strftime("%Y-%m-%d")
         )
 
+        overview = summary_result.overview if summary_result else ""
+        key_info = summary_result.key_info if summary_result else ""
+
         if not core:
-            # 新主题首次创建 core.md，用一次 LLM 调用分别生成概述和关键信息
-            overview, key_info = await self._generate_core_sections(
-                umo, topic_name, round_data, ts=ts
-            )
+            # 新主题首次创建 core.md，使用 summarizer 输出的概述和关键信息
             new_entry = f"- [{date_str}] {new_summary} (ID: {fragment_id})\n"
+            overview_text = overview or new_summary
+            key_info_text = key_info or f"- {new_summary}"
             core = (
                 f"# 主题: {topic_name}\n\n"
-                f"## 概述\n{overview}\n\n"
-                f"## 关键信息\n{key_info}\n\n"
+                f"## 概述\n{overview_text}\n\n"
+                f"## 关键信息\n{key_info_text}\n\n"
                 f"## 最近记忆\n{new_entry}"
             )
-        elif is_merge:
-            # 合并：找到已有条目，更新其摘要文本
-            lines = core.split("\n")
-            updated = False
-            for i, line in enumerate(lines):
-                if f"(ID: {fragment_id})" in line:
-                    lines[i] = f"- [{date_str}] {new_summary} (ID: {fragment_id})"
-                    updated = True
-                    break
-            if not updated:
-                # 兜底：找不到已有条目时追加
-                lines.append(f"- [{date_str}] {new_summary} (ID: {fragment_id})")
-            core = "\n".join(lines)
         else:
-            # 新建：追加到"最近记忆"部分
-            new_entry = f"- [{date_str}] {new_summary} (ID: {fragment_id})\n"
-            if "## 最近记忆" in core:
-                core = core.rstrip() + "\n" + new_entry
+            # 后续更新
+            if overview:
+                # 替换概述部分
+                lines = core.split("\n")
+                new_lines = []
+                in_overview = False
+                for line in lines:
+                    if line.strip() == "## 概述":
+                        in_overview = True
+                        new_lines.append(line)
+                        new_lines.append(overview)
+                        continue
+                    if in_overview:
+                        if line.startswith("## "):
+                            in_overview = False
+                            new_lines.append(line)
+                        # 跳过原有概述内容
+                        continue
+                    new_lines.append(line)
+                core = "\n".join(new_lines)
+
+            if key_info:
+                # 追加关键信息到 ## 关键信息 部分
+                lines = core.split("\n")
+                new_lines = []
+                inserted = False
+                for line in lines:
+                    new_lines.append(line)
+                    if not inserted and line.strip() == "## 关键信息":
+                        new_lines.append(key_info)
+                        inserted = True
+                if inserted:
+                    core = "\n".join(new_lines)
+                else:
+                    core += f"\n\n## 关键信息\n{key_info}"
+
+            if is_merge:
+                # 合并：找到已有条目，更新其摘要文本
+                lines = core.split("\n")
+                updated = False
+                for i, line in enumerate(lines):
+                    if f"(ID: {fragment_id})" in line:
+                        lines[i] = f"- [{date_str}] {new_summary} (ID: {fragment_id})"
+                        updated = True
+                        break
+                if not updated:
+                    # 兜底：找不到已有条目时追加
+                    lines.append(f"- [{date_str}] {new_summary} (ID: {fragment_id})")
+                core = "\n".join(lines)
             else:
-                core += f"\n\n## 最近记忆\n{new_entry}"
+                # 新建：追加到"最近记忆"部分
+                new_entry = f"- [{date_str}] {new_summary} (ID: {fragment_id})\n"
+                if "## 最近记忆" in core:
+                    core = core.rstrip() + "\n" + new_entry
+                else:
+                    core += f"\n\n## 最近记忆\n{new_entry}"
 
         await self.store.save_core_md(umo, topic_id, core)
-
-    async def _generate_core_sections(
-        self,
-        umo: str,
-        topic_name: str,
-        round_data: dict,
-        ts: str = "",
-    ) -> tuple[str, str]:
-        """首次创建 core.md 时，一次 LLM 调用同时生成概述和关键信息。
-
-        概述：对主题是什么（根源）、发生了什么（历史过程）、现状是什么的高度凝练概括。
-        关键信息：具体的、时效性不强的条目，如初心、里程碑、原则、用户偏好等。
-        """
-        user_msg = round_data.get("user_message", "")
-        assistant_msg = round_data.get("assistant_response", "")
-        summary = round_data.get("summary", "")
-
-        prompt = f"""基于以下用户与助手的对话内容，为主题「{topic_name}」生成两段内容。
-
-对话时间: {ts}
-对话内容：
-用户：{user_msg}
-助手：{assistant_msg}
-摘要：{summary}
-
-请按以下格式严格输出（不要添加任何多余文字，不要重复 markdown 标题）：
-
-概述：
-（写一段话，围绕用户和助手的实际聊天内容来总结：用户在聊什么、讨论了什么、目前的进展或状态。不要泛泛地解释主题概念，要聚焦于这次对话中发生的具体事情。2-4句话即可。）
-
-关键信息：
-- （从对话中提取具体的、时效性不强的关键信息，每条以 "- " 开头。如：用户表达的偏好/习惯、达成的原则/共识、重要的决定或里程碑等。只写对话中实际出现的信息，如果没有明确的信息，宁可留空也不要凑数。）
-
-角色区分：对话中"用户"是使用者，"助手"是 AI。用户对助手的称呼不是用户自己的名字，不要写入关键信息中。
-
-重要：所有涉及时间的描述必须使用绝对日期（如"2025年3月15日"），禁止使用"今天"、"昨天"、"最近"等相对时间。"""
-
-        try:
-            result = await self._call_llm(
-                system_prompt="你是一个记忆整理助手，擅长从对话中提炼精炼的信息。",
-                prompt=prompt,
-                provider=self._summary_provider,
-                caller_name="update_core_md.generate_sections",
-            )
-        except Exception as e:
-            logger.warning(
-                f"[TopicContext] 生成 core 概述/关键信息失败，使用摘要兜底: {e}"
-            )
-            return summary, f"- {summary}"
-
-        # 解析 LLM 输出
-        overview, key_info = summary, f"- {summary}"  # 兜底
-        if result:
-            parts = result.split("关键信息：")
-            if len(parts) == 2:
-                overview_part = parts[0]
-                key_info_part = parts[1]
-                # 提取"概述："之后的内容
-                overview_marker = "概述："
-                if overview_marker in overview_part:
-                    overview = overview_part.split(overview_marker, 1)[1].strip()
-                else:
-                    overview = overview_part.strip()
-                key_info = key_info_part.strip()
-            else:
-                # 尝试"关键信息:"（英文冒号）
-                parts = result.split("关键信息:")
-                if len(parts) == 2:
-                    overview_part = parts[0]
-                    key_info_part = parts[1]
-                    overview_marker = "概述："
-                    if overview_marker in overview_part:
-                        overview = overview_part.split(overview_marker, 1)[1].strip()
-                    elif "概述:" in overview_part:
-                        overview = overview_part.split("概述:", 1)[1].strip()
-                    else:
-                        overview = overview_part.strip()
-                    key_info = key_info_part.strip()
-
-        return overview, key_info
 
     # ─── 核心钩子：LLM 请求前 ───
 
