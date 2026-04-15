@@ -63,10 +63,9 @@ class TopicContextPlugin(Star):
         # 获取配置
         config = await self._get_config()
 
-        # 初始化调试日志记录器（默认关闭）
+        # 调试日志记录器（仅通过修改此处代码手动启用，不暴露配置项）
+        # 如需调试 LLM 调用细节，将下行改为: self.debug_logger = LLMDebugLogger(data_dir)
         self.debug_logger = None
-        if config.get("debug_enabled", False):
-            self.debug_logger = LLMDebugLogger(data_dir)
 
         # 创建记忆总结专用调用器（支持独立 provider）
         summary_caller, self._summary_provider = self._create_provider_caller(
@@ -308,32 +307,6 @@ class TopicContextPlugin(Star):
         """
         logger.info("[TopicContext] >>> on_llm_response 钩子已触发 <<<")
 
-        # 打印 response 对象的关键属性，方便排查
-        logger.info(
-            f"[TopicContext] response 类型: {type(response).__name__}, "
-            f"role: {getattr(response, 'role', 'N/A')}"
-        )
-        logger.info(
-            f"[TopicContext] response.completion_text: "
-            f"{repr(getattr(response, 'completion_text', None))}"
-        )
-        logger.info(
-            f"[TopicContext] response.tools_call_name: "
-            f"{repr(getattr(response, 'tools_call_name', None))}"
-        )
-        logger.info(
-            f"[TopicContext] response.tools_call_extra_content: "
-            f"{repr(getattr(response, 'tools_call_extra_content', None))}"
-        )
-        logger.info(
-            f"[TopicContext] response.result_chain: "
-            f"{repr(getattr(response, 'result_chain', None))}"
-        )
-        logger.info(
-            f"[TopicContext] response 所有属性: "
-            f"{[a for a in dir(response) if not a.startswith('_')]}"
-        )
-
         config = await self._get_config()
         if not config.get("enabled", True):
             logger.info("[TopicContext] 插件未启用 (enabled=False)，退出")
@@ -354,20 +327,13 @@ class TopicContextPlugin(Star):
             hasattr(response, "tools_call_extra_content")
             and response.tools_call_extra_content
         ):
-            logger.info(
-                f"[TopicContext] 检测到 tool loop 总结响应（tools_call_extra_content={response.tools_call_extra_content[:100]}），跳过总结"
-            )
+            logger.info("[TopicContext] 检测到 tool loop 总结响应，跳过总结")
             return
 
         # 从缓存获取用户消息（在 on_llm_request 中存入，以 span_id 为键）
         span_id = event.span.span_id
         user_message = self._pending_user_messages.pop(span_id, "")
-        logger.info(
-            f"[TopicContext] 缓存的用户消息: {repr(user_message[:100] if user_message else '')}"
-        )
-        logger.info(
-            f"[TopicContext] 当前 _pending_user_messages keys: {list(self._pending_user_messages.keys())}"
-        )
+        logger.info("[TopicContext] 缓存的用户消息: " + ("有" if user_message else "无"))
         if not user_message:
             logger.info("[TopicContext] 未找到缓存的用户消息，跳过总结")
             return
@@ -375,16 +341,14 @@ class TopicContextPlugin(Star):
         # 跳过斜杠指令型消息（如 /new, /memory, /help 等），无需总结记忆
         # 注意：is_at_or_wake_command 在私聊场景下永远为 True，不能用于此判断
         if user_message.strip().startswith("/"):
-            logger.info(
-                f"[TopicContext] 是斜杠指令消息（{user_message.strip()[:30]}），跳过总结"
-            )
+            logger.info("[TopicContext] 是斜杠指令消息，跳过总结")
             return
 
         # 从 LLMResponse 提取助手回复文本
         assistant_response = ""
         if hasattr(response, "completion_text") and response.completion_text:
             assistant_response = response.completion_text
-        elif response.result_chain and response.result_chain.chain:
+        elif hasattr(response, "result_chain") and response.result_chain and response.result_chain.chain:
             from astrbot.api.message_components import Plain
 
             parts = [
@@ -392,9 +356,7 @@ class TopicContextPlugin(Star):
             ]
             assistant_response = "\n".join(parts)
 
-        logger.info(
-            f"[TopicContext] 提取到的助手回复: {repr(assistant_response[:100] if assistant_response else '')}"
-        )
+        logger.info("[TopicContext] 提取到的助手回复: " + ("有" if assistant_response else "无"))
         if not assistant_response:
             logger.info("[TopicContext] 助手回复为空，退出")
             return
