@@ -13,11 +13,18 @@ from astrbot.api import logger
 
 class MemoryStore:
     def __init__(self, data_dir: Path):
-        self.data_dir = data_dir
+        self.data_dir = data_dir.resolve()
         # 确保数据目录存在
         self.data_dir.mkdir(parents=True, exist_ok=True)
         # 并发控制：按 umo 隔离的 topics_index 锁
         self._topic_index_locks: dict[str, asyncio.Lock] = {}
+
+    def _safe_path(self, *parts: str) -> Path:
+        """拼接路径并验证结果仍在 self.data_dir 内，防止路径穿越。"""
+        target = self.data_dir.joinpath(*parts).resolve()
+        if not str(target).startswith(str(self.data_dir) + "/") and target != self.data_dir:
+            raise ValueError(f"路径穿越被阻止: {parts}")
+        return target
 
     def _get_topic_index_lock(self, umo: str) -> asyncio.Lock:
         if umo not in self._topic_index_locks:
@@ -33,9 +40,8 @@ class MemoryStore:
     def user_dir(self, umo: str) -> Path:
         """获取某用户的数据目录，按平台+用户ID隔离。"""
         # umo 格式示例: "aiocqhttp:group_123456:789" 或 "webchat:private:abc"
-        # 用下划线替换冒号等特殊字符作为目录名
         safe_name = umo.replace(":", "_").replace("/", "_")
-        d = self.data_dir / safe_name
+        d = self._safe_path(safe_name)
         d.mkdir(parents=True, exist_ok=True)
         return d
 
@@ -91,7 +97,8 @@ class MemoryStore:
     # ─── 主题目录 ───
 
     def topic_dir(self, umo: str, topic_id: str) -> Path:
-        d = self.user_dir(umo) / topic_id
+        safe_name = umo.replace(":", "_").replace("/", "_")
+        d = self._safe_path(safe_name, topic_id)
         d.mkdir(parents=True, exist_ok=True)
         return d
 
@@ -145,7 +152,8 @@ class MemoryStore:
         return d
 
     def fragment_path(self, umo: str, topic_id: str, fragment_id: str) -> Path:
-        return self.fragments_dir(umo, topic_id) / f"{fragment_id}.json"
+        safe_name = umo.replace(":", "_").replace("/", "_")
+        return self._safe_path(safe_name, topic_id, "fragments", f"{fragment_id}.json")
 
     async def load_fragment(
         self, umo: str, topic_id: str, fragment_id: str
@@ -368,6 +376,14 @@ class MemoryStore:
         """创建一个空主题，返回主题条目字典。"""
         topic_id = self.generate_topic_id(name)
         now = datetime.now().isoformat()
+
+        # 检查 ID 和名称是否与已有主题冲突
+        index = await self.load_topics_index(umo)
+        for t in index.get("topics", []):
+            if t["id"] == topic_id:
+                raise ValueError(f"主题 ID '{topic_id}' 已存在（与主题 '{t['name']}' 冲突），请换一个名称")
+            if t["name"] == name:
+                raise ValueError(f"主题名 '{name}' 已存在")
 
         # 创建主题目录和空文件
         tdir = self.topic_dir(umo, topic_id)

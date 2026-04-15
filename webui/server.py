@@ -95,7 +95,10 @@ class WebUIServer:
             name = body.get("name", "").strip()
             if not name:
                 raise HTTPException(400, "名称不能为空")
-            topic = await self.store.create_empty_topic(umo, name)
+            try:
+                topic = await self.store.create_empty_topic(umo, name)
+            except ValueError as e:
+                raise HTTPException(409, str(e))
             return {"ok": True, "topic": topic}
 
         @self._app.get("/api/users/{umo}/topics")
