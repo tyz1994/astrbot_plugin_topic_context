@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -18,7 +19,6 @@ class MemoryStore:
         # 并发控制：按 umo 隔离的 topics_index 锁，按 (umo, topic_id) 隔离的对话日志锁
         self._topic_index_locks: dict[str, asyncio.Lock] = {}
         self._conv_log_locks: dict[str, asyncio.Lock] = {}
-        self._global_lock = asyncio.Lock()  # 保护 _topic_index_locks / _conv_log_locks 字典本身
 
     def _get_topic_index_lock(self, umo: str) -> asyncio.Lock:
         if umo not in self._topic_index_locks:
@@ -98,8 +98,6 @@ class MemoryStore:
         # 删除主题目录（在锁外执行，避免长时间持锁）
         topic_dir = self.topic_dir(umo, topic_id)
         if topic_dir.exists():
-            import shutil
-
             shutil.rmtree(topic_dir, ignore_errors=True)
 
     # ─── conversation_log.json（每主题原始对话日志） ───
@@ -332,8 +330,6 @@ class MemoryStore:
 
     async def rename_topic(self, umo: str, old_topic_id: str, new_name: str) -> None:
         """重命名主题：同步更新 index、文件夹名、片段中的 topic 字段，以及 core.md / experience.md 标题。"""
-        import shutil
-
         new_topic_id = self.generate_topic_id(new_name)
         udir = self.user_dir(umo)
 
@@ -397,8 +393,6 @@ class MemoryStore:
 
     async def create_empty_topic(self, umo: str, name: str) -> dict:
         """创建一个空主题，返回主题条目字典。"""
-        from datetime import datetime
-
         topic_id = self.generate_topic_id(name)
         now = datetime.now().isoformat()
 

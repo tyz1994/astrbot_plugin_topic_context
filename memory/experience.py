@@ -1,5 +1,7 @@
 """经验教训总结器：从用户负反馈中提取经验，写入 experience.md。"""
 
+from datetime import datetime
+
 from astrbot.api import logger
 
 from .store import MemoryStore
@@ -37,8 +39,6 @@ class ExperienceManager:
         Returns:
             新增的经验条目文本，如果无法提取则有意义的经验则返回 None
         """
-        from datetime import datetime
-
         date_str = datetime.now().strftime("%Y年%m月%d日")
 
         # 加载已有经验

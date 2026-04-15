@@ -5,6 +5,7 @@
 """
 
 import asyncio
+import time
 from datetime import datetime, timedelta
 
 from astrbot.api import logger
@@ -48,9 +49,11 @@ class TopicContextPlugin(Star):
         self._coldstart_running_umo: set[str] = set()
 
         # 用户消息缓存：在 on_llm_request 中存入，on_llm_response 中取出并消费。
-        # key 为 event.span.span_id（每条消息事件唯一），value 为用户消息文本。
+        # key 为 event.span.span_id（每条消息事件唯一），value 为 (用户消息文本, 存入时间戳)。
         # 解决 on_llm_response 触发时 event.message_str 可能为空或已变化的问题。
-        self._pending_user_messages: dict[str, str] = {}
+        # 带 TTL 自动清理，防止因请求超时/异常导致 on_llm_response 未触发而内存泄漏。
+        self._pending_user_messages: dict[str, tuple[str, float]] = {}
+        self._pending_messages_ttl: float = 3600.0  # 1 小时过期
 
     async def initialize(self):
         """插件初始化。"""
@@ -214,8 +217,6 @@ class TopicContextPlugin(Star):
                 )
             return ""
 
-        import time
-
         last_error = ""
         for attempt in range(1, max_retries + 1):
             t0 = time.perf_counter()
@@ -332,7 +333,8 @@ class TopicContextPlugin(Star):
 
         # 从缓存获取用户消息（在 on_llm_request 中存入，以 span_id 为键）
         span_id = event.span.span_id
-        user_message = self._pending_user_messages.pop(span_id, "")
+        entry = self._pending_user_messages.pop(span_id, None)
+        user_message = entry[0] if entry else ""
         logger.info("[TopicContext] 缓存的用户消息: " + ("有" if user_message else "无"))
         if not user_message:
             logger.info("[TopicContext] 未找到缓存的用户消息，跳过总结")
@@ -643,7 +645,12 @@ class TopicContextPlugin(Star):
             return
 
         # 缓存用户消息，供 on_llm_response 使用（以 span_id 为键，避免并发覆盖）
-        self._pending_user_messages[event.span.span_id] = user_message
+        self._pending_user_messages[event.span.span_id] = (
+            user_message,
+            time.monotonic(),
+        )
+        # 清理过期缓存条目
+        self._cleanup_pending_messages()
 
         try:
             # 保存原始信息，用于 debug
@@ -688,6 +695,21 @@ class TopicContextPlugin(Star):
                 )
         except Exception as e:
             logger.error(f"[TopicContext] LLM 请求前处理失败: {e}")
+
+    def _cleanup_pending_messages(self):
+        """清理 _pending_user_messages 中已过期的条目，防止内存泄漏。"""
+        now = time.monotonic()
+        expired_keys = [
+            k
+            for k, (_, ts) in self._pending_user_messages.items()
+            if now - ts > self._pending_messages_ttl
+        ]
+        for k in expired_keys:
+            del self._pending_user_messages[k]
+        if expired_keys:
+            logger.debug(
+                f"[TopicContext] 清理了 {len(expired_keys)} 条过期的待处理用户消息缓存"
+            )
 
     @staticmethod
     def _extract_prev_round(contexts: list[dict]) -> str:
