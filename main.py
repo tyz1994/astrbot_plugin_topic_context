@@ -45,7 +45,7 @@ class TopicContextPlugin(Star):
         self.cold_starter: ColdStarter | None = None
         self.webui_server = None
         self.dream_task: asyncio.Task | None = None
-        self._coldstart_running = False
+        self._coldstart_running_umo: set[str] = set()
 
         # 用户消息缓存：在 on_llm_request 中存入，on_llm_response 中取出并消费。
         # key 为 event.span.span_id（每条消息事件唯一），value 为用户消息文本。
@@ -788,7 +788,7 @@ class TopicContextPlugin(Star):
         """冷启动：扫描历史对话构建初始记忆。用法: /memory coldstart [天数]"""
         umo = event.unified_msg_origin
 
-        if self._coldstart_running:
+        if umo in self._coldstart_running_umo:
             yield event.plain_result("冷启动正在进行中，请等待完成。")
             return
 
@@ -796,7 +796,7 @@ class TopicContextPlugin(Star):
             yield event.plain_result("天数范围: 1-365")
             return
 
-        self._coldstart_running = True
+        self._coldstart_running_umo.add(umo)
 
         try:
             yield event.plain_result(f"开始冷启动，扫描过去 {days} 天的对话...")
@@ -846,7 +846,7 @@ class TopicContextPlugin(Star):
             logger.error(f"[TopicContext] 冷启动失败: {e}")
             yield event.plain_result(f"冷启动失败: {e}")
         finally:
-            self._coldstart_running = False
+            self._coldstart_running_umo.discard(umo)
 
     # ─── Dream 定时整理 ───
 
