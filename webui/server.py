@@ -75,18 +75,10 @@ class WebUIServer:
                 for d in data_dir.iterdir():
                     if d.is_dir() and not d.name.startswith(".") and d.name != "debug":
                         index = await self.store.load_topics_index(d.name)
-                        # 从 conversation_log 中统计总轮次数
-                        total_rounds = 0
-                        for topic in index.get("topics", []):
-                            rounds = await self.store.load_conversation_log(
-                                d.name, topic["id"]
-                            )
-                            total_rounds += len(rounds)
                         users.append(
                             {
                                 "umo": d.name,
                                 "topic_count": len(index.get("topics", [])),
-                                "round_count": total_rounds,
                             }
                         )
             return users
@@ -120,15 +112,11 @@ class WebUIServer:
             core = await self.store.load_core_md(umo, topic_id)
             experience = await self.store.load_experience_md(umo, topic_id)
             fragments = await self.store.load_all_fragments(umo, topic_id)
-            # 从 conversation_log 中统计该主题的轮次数
-            conv_log = await self.store.load_conversation_log(umo, topic_id)
-            topic_rounds = len(conv_log)
             return {
                 **topic,
                 "core_md": core,
                 "experience_md": experience,
                 "fragments": fragments,
-                "round_count": topic_rounds,
             }
 
         @self._app.put("/api/users/{umo}/topics/{topic_id}/core")

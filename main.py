@@ -386,10 +386,9 @@ class TopicContextPlugin(Star):
         config: dict,
         timestamp: str | None = None,
     ) -> None:
-        """处理一轮对话：总结（含主题匹配）→ 保存原文 → 记忆处理。
+        """处理一轮对话：总结（含主题匹配）→ 记忆处理。
 
-        每轮对话都会保存原始对话日志到 conversation_log.json（用于构建上下文），
-        worth_remembering 仅控制是否进行 fragment 合并、core.md 更新等长期记忆操作。
+        worth_remembering 控制是否进行 fragment 合并、core.md 更新等长期记忆操作。
         """
         # 1. 加载已有主题列表，供 summarizer 做精确匹配
         index = await self.store.load_topics_index(umo)
@@ -437,17 +436,6 @@ class TopicContextPlugin(Star):
                 },
             )
 
-        # 4. 保存原始对话到 conversation_log（始终执行，保证上下文连续性）
-        await self.store.append_conversation_log(
-            umo,
-            topic_id,
-            {
-                "timestamp": ts,
-                "user_message": user_message,
-                "assistant_response": assistant_response,
-            },
-        )
-
         # 更新主题的 updated_at
         await self.store.update_topic(
             umo,
@@ -457,7 +445,7 @@ class TopicContextPlugin(Star):
 
         # 5. 以下仅 worth_remembering 时执行（长期记忆处理）
         if not summary_result.worth_remembering:
-            logger.debug("[TopicContext] 该轮不值得长期记忆，对话原文已记录")
+            logger.debug("[TopicContext] 该轮不值得长期记忆，跳过")
             return
 
         logger.info(

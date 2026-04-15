@@ -1,4 +1,4 @@
-"""存储管理器：读写 topics_index.json、conversation_log.json、core.md、experience.md、fragments/。"""
+"""存储管理器：读写 topics_index.json、core.md、experience.md、fragments/。"""
 
 import asyncio
 import json
@@ -16,29 +16,17 @@ class MemoryStore:
         self.data_dir = data_dir
         # 确保数据目录存在
         self.data_dir.mkdir(parents=True, exist_ok=True)
-        # 并发控制：按 umo 隔离的 topics_index 锁，按 (umo, topic_id) 隔离的对话日志锁
+        # 并发控制：按 umo 隔离的 topics_index 锁
         self._topic_index_locks: dict[str, asyncio.Lock] = {}
-        self._conv_log_locks: dict[str, asyncio.Lock] = {}
 
     def _get_topic_index_lock(self, umo: str) -> asyncio.Lock:
         if umo not in self._topic_index_locks:
-            # 在全局锁保护下创建，避免并发创建同一 key 的锁
             loop = asyncio.get_running_loop()
             if loop.is_running():
                 self._topic_index_locks.setdefault(umo, asyncio.Lock())
             else:
                 self._topic_index_locks[umo] = asyncio.Lock()
         return self._topic_index_locks[umo]
-
-    def _get_conv_log_lock(self, umo: str, topic_id: str) -> asyncio.Lock:
-        key = f"{umo}:{topic_id}"
-        if key not in self._conv_log_locks:
-            loop = asyncio.get_running_loop()
-            if loop.is_running():
-                self._conv_log_locks.setdefault(key, asyncio.Lock())
-            else:
-                self._conv_log_locks[key] = asyncio.Lock()
-        return self._conv_log_locks[key]
 
     # ─── 用户数据目录 ───
 
@@ -99,32 +87,6 @@ class MemoryStore:
         topic_dir = self.topic_dir(umo, topic_id)
         if topic_dir.exists():
             shutil.rmtree(topic_dir, ignore_errors=True)
-
-    # ─── conversation_log.json（每主题原始对话日志） ───
-
-    async def append_conversation_log(
-        self, umo: str, topic_id: str, round_data: dict
-    ) -> None:
-        """向某主题的对话日志追加一轮原始对话。"""
-        lock = self._get_conv_log_lock(umo, topic_id)
-        async with lock:
-            path = self.topic_dir(umo, topic_id) / "conversation_log.json"
-            if not path.exists():
-                log = {"rounds": []}
-            else:
-                log = await self._read_json(path)
-            log["rounds"].append(round_data)
-            await self._write_json(path, log)
-
-    async def load_conversation_log(self, umo: str, topic_id: str) -> list[dict]:
-        """加载某主题的对话日志，按 timestamp 排序。"""
-        path = self.topic_dir(umo, topic_id) / "conversation_log.json"
-        if not path.exists():
-            return []
-        log = await self._read_json(path)
-        rounds = log.get("rounds", [])
-        rounds.sort(key=lambda r: r.get("timestamp", ""))
-        return rounds
 
     # ─── 主题目录 ───
 
@@ -400,7 +362,6 @@ class MemoryStore:
         tdir = self.topic_dir(umo, topic_id)
         (tdir / "core.md").write_text("", encoding="utf-8")
         (tdir / "experience.md").write_text("", encoding="utf-8")
-        await self._write_json(tdir / "conversation_log.json", {"rounds": []})
 
         # 添加到 index
         topic_entry = {
