@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from astrbot.api import logger
 
@@ -80,7 +80,7 @@ class ColdStarter:
             return stats
 
         # 过滤时间范围
-        cutoff = datetime.now() - timedelta(days=days)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         filtered_convs = []
         for conv in conversations:
             try:
@@ -88,11 +88,14 @@ class ColdStarter:
                 created = getattr(conv, "created_at", None)
                 ts = updated or created
                 if ts:
-                    # v1 Conversation 的 created_at/updated_at 是 int 类型（Unix 时间戳）
+                    # v1: int Unix 时间戳；v2: aware UTC datetime
                     if isinstance(ts, (int, float)):
-                        ts = datetime.fromtimestamp(ts)
+                        ts = datetime.fromtimestamp(ts, tz=timezone.utc)
                     elif isinstance(ts, str):
                         ts = datetime.fromisoformat(ts)
+                    # naive 视为 UTC（兼容旧数据），确保双方均为 aware 再比较
+                    if ts.tzinfo is None:
+                        ts = ts.replace(tzinfo=timezone.utc)
                     if ts >= cutoff:
                         filtered_convs.append(conv)
             except Exception as e:
