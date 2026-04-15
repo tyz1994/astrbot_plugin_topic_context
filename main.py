@@ -717,33 +717,6 @@ class TopicContextPlugin(Star):
         """记忆管理命令组。用法: /memory <子命令>"""
         pass
 
-    @memory_group.command("status")
-    async def memory_status(self, event: AstrMessageEvent):
-        """查看记忆状态。"""
-        umo = event.unified_msg_origin
-        index = await self.store.load_topics_index(umo)
-        topics = index.get("topics", [])
-
-        # 从 fragments 中统计总轮次数
-        total_rounds = 0
-        for t in topics:
-            frags = await self.store.load_all_fragments(umo, t["id"])
-            for f in frags:
-                total_rounds += len(f.get("rounds", []))
-
-        lines = [
-            "📋 记忆状态",
-            f"主题数量: {len(topics)}",
-            f"已记录轮次: {total_rounds}",
-        ]
-        if topics:
-            lines.append("\n主题列表:")
-            for t in topics:
-                frag_count = t.get("fragment_count", 0)
-                lines.append(f"  - {t['name']} ({frag_count} 个片段)")
-
-        yield event.plain_result("\n".join(lines))
-
     @memory_group.command("topics")
     async def memory_topics(self, event: AstrMessageEvent):
         """列出所有主题。"""
@@ -809,86 +782,6 @@ class TopicContextPlugin(Star):
         lines.append(f"\n片段总数: {len(fragments)}")
 
         yield event.plain_result("\n".join(lines))
-
-    @memory_group.command("wrong")
-    async def memory_wrong(self, event: AstrMessageEvent):
-        """标记当前回复有误。用法: /memory wrong"""
-        umo = event.unified_msg_origin
-
-        # 从最近更新的主题中找到活跃主题
-        index = await self.store.load_topics_index(umo)
-        topics = index.get("topics", [])
-        if not topics:
-            yield event.plain_result("暂无记忆记录。")
-            return
-
-        latest_topic = max(topics, key=lambda t: t.get("updated_at", ""))
-        topic_id = latest_topic["id"]
-        topic_name = latest_topic["name"]
-
-        if not topic_id:
-            yield event.plain_result("无法确定当前主题。")
-            return
-
-        # 获取最近的片段
-        fragment = await self.store.get_latest_fragment(umo, topic_id)
-        if not fragment or not fragment.get("rounds"):
-            yield event.plain_result("无法获取最近的对话记录。")
-            return
-
-        latest_conv = fragment["rounds"][-1]
-
-        # 提取经验
-        result = await self.experience_mgr.extract_experience(
-            umo=umo,
-            topic_id=topic_id,
-            topic_name=topic_name,
-            user_message=event.message_str,
-            assistant_response=latest_conv.get("assistant_response", ""),
-            feedback_summary=event.message_str,
-        )
-
-        if result:
-            yield event.plain_result(f"已记录经验教训到主题 '{topic_name}'。")
-        else:
-            yield event.plain_result("未能提取到新的经验教训。")
-
-    @memory_group.command("forget")
-    async def memory_forget(self, event: AstrMessageEvent, topic_name: str):
-        """删除指定主题的记忆。用法: /memory forget <主题名称>"""
-        umo = event.unified_msg_origin
-        index = await self.store.load_topics_index(umo)
-
-        topic = None
-        for t in index.get("topics", []):
-            if topic_name in t["name"] or topic_name == t["id"]:
-                topic = t
-                break
-
-        if not topic:
-            yield event.plain_result(f"未找到主题 '{topic_name}'。")
-            return
-
-        await self.store.remove_topic(umo, topic["id"])
-        yield event.plain_result(f"已删除主题 '{topic['name']}' 及其所有记忆。")
-
-    @memory_group.command("clear")
-    async def memory_clear(self, event: AstrMessageEvent):
-        """清空所有记忆。用法: /memory clear"""
-        umo = event.unified_msg_origin
-        user_data_dir = self.store.user_dir(umo)
-
-        import shutil
-
-        # 清空主题目录
-        for d in user_data_dir.iterdir():
-            if d.is_dir():
-                shutil.rmtree(d, ignore_errors=True)
-
-        # 重置索引
-        await self.store.save_topics_index(umo, {"version": 1, "topics": []})
-
-        yield event.plain_result("已清空所有记忆。")
 
     @memory_group.command("coldstart")
     async def memory_coldstart(self, event: AstrMessageEvent, days: int = 7):
