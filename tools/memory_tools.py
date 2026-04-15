@@ -17,9 +17,7 @@ def create_memory_tools(store: MemoryStore):
     """
     from astrbot.core.agent.tool import FunctionTool
 
-    async def read_memory_fragment(
-        event: AstrMessageEvent, fragment_id: str
-    ) -> str:
+    async def read_memory_fragment(event: AstrMessageEvent, fragment_id: str) -> str:
         """读取指定记忆片段的完整内容。当需要回忆用户之前某段对话的细节时使用。
 
         Args:
@@ -54,9 +52,7 @@ def create_memory_tools(store: MemoryStore):
             logger.error(f"[MemoryTool] read_memory_fragment 失败: {e}")
             return f"读取记忆片段失败: {e}"
 
-    async def search_memory_fragments(
-        event: AstrMessageEvent, keyword: str
-    ) -> str:
+    async def search_memory_fragments(event: AstrMessageEvent, keyword: str) -> str:
         """按关键词搜索当前主题下的记忆片段。当 core.md 索引中没有找到需要的记忆时使用。
 
         Args:

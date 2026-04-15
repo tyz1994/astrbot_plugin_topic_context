@@ -56,9 +56,9 @@ class DreamManager:
         )
 
         # 去掉「最近记忆」部分，让 LLM 基于 fragment 摘要列表重新整理
-        core_without_recent = re.sub(
-            r"\n*## 最近记忆\n[\s\S]*", "", core
-        ) if core else ""
+        core_without_recent = (
+            re.sub(r"\n*## 最近记忆\n[\s\S]*", "", core) if core else ""
+        )
 
         user_instruction = f"\n用户额外指令: {instruction}\n" if instruction else ""
 

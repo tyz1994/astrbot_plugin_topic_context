@@ -72,7 +72,9 @@ class LLMDebugLogger:
         )
 
         # 清理旧文件，仅保留最近 MAX_DEBUG_FILES 条
-        existing = sorted(self.debug_dir.glob("*.json"), key=lambda f: f.stat().st_mtime)
+        existing = sorted(
+            self.debug_dir.glob("*.json"), key=lambda f: f.stat().st_mtime
+        )
         for old in existing[: -self.MAX_DEBUG_FILES]:
             old.unlink()
 

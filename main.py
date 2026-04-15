@@ -335,7 +335,9 @@ class TopicContextPlugin(Star):
         span_id = event.span.span_id
         entry = self._pending_user_messages.pop(span_id, None)
         user_message = entry[0] if entry else ""
-        logger.info("[TopicContext] 缓存的用户消息: " + ("有" if user_message else "无"))
+        logger.info(
+            "[TopicContext] 缓存的用户消息: " + ("有" if user_message else "无")
+        )
         if not user_message:
             logger.info("[TopicContext] 未找到缓存的用户消息，跳过总结")
             return
@@ -350,7 +352,11 @@ class TopicContextPlugin(Star):
         assistant_response = ""
         if hasattr(response, "completion_text") and response.completion_text:
             assistant_response = response.completion_text
-        elif hasattr(response, "result_chain") and response.result_chain and response.result_chain.chain:
+        elif (
+            hasattr(response, "result_chain")
+            and response.result_chain
+            and response.result_chain.chain
+        ):
             from astrbot.api.message_components import Plain
 
             parts = [
@@ -358,7 +364,9 @@ class TopicContextPlugin(Star):
             ]
             assistant_response = "\n".join(parts)
 
-        logger.info("[TopicContext] 提取到的助手回复: " + ("有" if assistant_response else "无"))
+        logger.info(
+            "[TopicContext] 提取到的助手回复: " + ("有" if assistant_response else "无")
+        )
         if not assistant_response:
             logger.info("[TopicContext] 助手回复为空，退出")
             return
