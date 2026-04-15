@@ -11,12 +11,6 @@
     "default": true,
     "description": "是否自动检测用户消息中的负反馈信号"
   },
-  "context_max_rounds": {
-    "type": "int",
-    "title": "上下文最大轮次",
-    "default": 30,
-    "description": "从 conversation_log 构建上下文时最多包含多少轮对话"
-  },
   "dream_enabled": {
     "type": "bool",
     "title": "启用 Dream 整理",
