@@ -244,6 +244,9 @@ class MemoryStore:
         self, umo: str, topic_id: str, keyword: str
     ) -> list[dict]:
         """在主题下按关键词搜索片段，搜索范围：summary、keywords、rounds 中的消息。"""
+        keyword = keyword.strip()
+        if not keyword:
+            return []
         fragments = await self.load_all_fragments(umo, topic_id)
         keyword_lower = keyword.lower()
         results = []
@@ -310,6 +313,14 @@ class MemoryStore:
 
             if not found:
                 raise ValueError(f"主题 {old_topic_id} 不存在")
+
+            # 检查新 ID 是否与其他主题冲突（排除自身）
+            if new_topic_id != old_topic_id:
+                for t in index["topics"]:
+                    if t["id"] == new_topic_id:
+                        raise ValueError(
+                            f"新名称生成的主题 ID '{new_topic_id}' 与已有主题冲突，请换一个名称"
+                        )
 
             # 1. 更新 topics_index.json 中的 name 和 id
             for t in index["topics"]:

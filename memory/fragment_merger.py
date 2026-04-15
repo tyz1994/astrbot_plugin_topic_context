@@ -2,7 +2,7 @@
 
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 
 from astrbot.api import logger
 
@@ -67,7 +67,11 @@ class FragmentMerger:
             if last_ts_str:
                 try:
                     last_ts = datetime.fromisoformat(last_ts_str)
-                    if (datetime.now() - last_ts).total_seconds() > 12 * 3600:
+                    if last_ts.tzinfo is None:
+                        last_ts = last_ts.replace(tzinfo=timezone.utc)
+                    if (
+                        datetime.now(timezone.utc) - last_ts
+                    ).total_seconds() > 12 * 3600:
                         logger.debug(
                             "[FragmentMerger] 最近片段距上一轮超过 12 小时，跳过合并"
                         )
@@ -156,8 +160,23 @@ class FragmentMerger:
             result_text = result_text.strip()
 
             data = json.loads(result_text)
+
+            # 类型校验与兜底
+            if not isinstance(data, dict):
+                logger.warning("[FragmentMerger] LLM 返回非 dict 类型，跳过合并")
+                return MergeResult(should_merge=False)
+
             decision = data.get("decision", "new")
+            if not isinstance(decision, str):
+                decision = "new"
+            else:
+                decision = decision.strip().lower()
+                if decision not in ("merge", "new"):
+                    decision = "new"
+
             merged_summary = data.get("merged_summary", "")
+            if not isinstance(merged_summary, str):
+                merged_summary = ""
 
             if decision == "merge" and merged_summary:
                 # 关键词取并集，辅助检索
