@@ -1,29 +1,31 @@
 """function-calling 工具：read_memory_fragment 和 search_memory_fragments。"""
 
 from astrbot.api import logger
+from astrbot.api.event import AstrMessageEvent
 
 from ..memory.store import MemoryStore
 
 
-def create_memory_tools(store: MemoryStore, current_umo_holder: dict):
+def create_memory_tools(store: MemoryStore):
     """创建记忆检索工具。
 
     Args:
         store: MemoryStore 实例
-        current_umo_holder: 字典，包含 "umo" 键，用于在 tool handler 中获取当前用户标识
 
     Returns:
         FunctionTool 列表
     """
     from astrbot.core.agent.tool import FunctionTool
 
-    async def read_memory_fragment(event, fragment_id: str) -> str:
+    async def read_memory_fragment(
+        self, event: AstrMessageEvent, fragment_id: str
+    ) -> str:
         """读取指定记忆片段的完整内容。当需要回忆用户之前某段对话的细节时使用。
 
         Args:
             fragment_id(string): 片段ID（如 "2024-01-15_103000"）
         """
-        umo = current_umo_holder.get("umo", "")
+        umo = event.unified_msg_origin
         if not umo:
             return "错误：无法获取当前用户标识。"
 
@@ -52,13 +54,15 @@ def create_memory_tools(store: MemoryStore, current_umo_holder: dict):
             logger.error(f"[MemoryTool] read_memory_fragment 失败: {e}")
             return f"读取记忆片段失败: {e}"
 
-    async def search_memory_fragments(event, keyword: str) -> str:
+    async def search_memory_fragments(
+        self, event: AstrMessageEvent, keyword: str
+    ) -> str:
         """按关键词搜索当前主题下的记忆片段。当 core.md 索引中没有找到需要的记忆时使用。
 
         Args:
             keyword(string): 搜索关键词
         """
-        umo = current_umo_holder.get("umo", "")
+        umo = event.unified_msg_origin
         if not umo:
             return "错误：无法获取当前用户标识。"
 

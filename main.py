@@ -44,12 +44,11 @@ class TopicContextPlugin(Star):
         self.context_injector: ContextInjector | None = None
         self.cold_starter: ColdStarter | None = None
         self.webui_server = None
-        self.current_umo_holder: dict = {"umo": ""}
         self.dream_task: asyncio.Task | None = None
         self._coldstart_running = False
 
         # 用户消息缓存：在 on_llm_request 中存入，on_llm_response 中取出并消费。
-        # key 为 unified_msg_origin，value 为用户消息文本。
+        # key 为 event.span.span_id（每条消息事件唯一），value 为用户消息文本。
         # 解决 on_llm_response 触发时 event.message_str 可能为空或已变化的问题。
         self._pending_user_messages: dict[str, str] = {}
 
@@ -89,7 +88,7 @@ class TopicContextPlugin(Star):
         self.cold_starter = ColdStarter(self.store)
 
         # 注册 function-calling 工具
-        tools = create_memory_tools(self.store, self.current_umo_holder)
+        tools = create_memory_tools(self.store)
         for tool in tools:
             self.context.add_llm_tools(tool)
 
@@ -341,7 +340,6 @@ class TopicContextPlugin(Star):
             return
 
         umo = event.unified_msg_origin
-        self.current_umo_holder["umo"] = umo
         logger.info(f"[TopicContext] umo={umo}")
 
         # 跳过工具调用中间轮次（LLM 发起 function call，等待工具返回结果）
@@ -361,8 +359,9 @@ class TopicContextPlugin(Star):
             )
             return
 
-        # 从缓存获取用户消息（在 on_llm_request 中存入）
-        user_message = self._pending_user_messages.pop(umo, "")
+        # 从缓存获取用户消息（在 on_llm_request 中存入，以 span_id 为键）
+        span_id = event.span.span_id
+        user_message = self._pending_user_messages.pop(span_id, "")
         logger.info(
             f"[TopicContext] 缓存的用户消息: {repr(user_message[:100] if user_message else '')}"
         )
@@ -719,13 +718,12 @@ class TopicContextPlugin(Star):
             return
 
         umo = event.unified_msg_origin
-        self.current_umo_holder["umo"] = umo
         user_message = event.message_str or ""
         if not user_message:
             return
 
-        # 缓存用户消息，供 on_llm_response 使用
-        self._pending_user_messages[umo] = user_message
+        # 缓存用户消息，供 on_llm_response 使用（以 span_id 为键，避免并发覆盖）
+        self._pending_user_messages[event.span.span_id] = user_message
 
         try:
             # 保存原始信息，用于 debug
