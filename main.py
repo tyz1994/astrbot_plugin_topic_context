@@ -982,6 +982,8 @@ class TopicContextPlugin(Star):
             for user_dir in data_dir.iterdir():
                 if not user_dir.is_dir():
                     continue
+                if user_dir.name.startswith(".") or user_dir.name == "debug":
+                    continue
 
                 user_count += 1
                 # 从目录名还原 umo（简单处理）

@@ -54,12 +54,11 @@ async function loadUsers() {
     tbody.innerHTML += `<tr>
       <td class="umo-cell" title="${u.umo}">${u.umo}</td>
       <td>${u.topic_count}</td>
-      <td>${u.round_count}</td>
       <td><button class="btn-primary" onclick="selectUser('${u.umo}')">查看</button></td>
     </tr>`;
     sidebar.innerHTML += `<div class="sidebar-user" onclick="selectUser('${u.umo}')">
       <div class="user-label">${short}</div>
-      <div>${u.topic_count} 主题 / ${u.round_count} 轮</div>
+      <div>${u.topic_count} 主题</div>
     </div>`;
   });
 }
@@ -141,7 +140,7 @@ async function selectTopic(umo, topicId) {
           </div>
         </div>
         <div class="frag-summary">${esc(f.summary)}</div>
-        <div class="frag-meta">${f.rounds ? f.rounds.length : 0} 轮 · ${f.created_at ? f.created_at.slice(0, 19) : ''} · ${esc((f.keywords || []).join(', '))}</div>
+        <div class="frag-meta">${f.created_at ? f.created_at.slice(0, 19) : ''} · ${esc((f.keywords || []).join(', '))}</div>
       </div>`).join('');
   }
 
@@ -193,15 +192,7 @@ async function showFragment(umo, topicId, fragId) {
   body.innerHTML = `
     <div><strong>摘要:</strong> ${esc(f.summary)}</div>
     <div style="margin-top:8px"><strong>关键词:</strong> ${esc((f.keywords || []).join(', '))}</div>
-    <div style="margin-top:4px"><strong>创建:</strong> ${f.created_at || ''} · <strong>更新:</strong> ${f.updated_at || ''}</div>
-    ${(f.rounds || []).map((r, i) => `
-      <div class="round-block">
-        <div class="round-label">轮次 ${i + 1} · ${r.timestamp || ''}</div>
-        <div class="role-user">用户:</div>
-        <div class="msg-text">${esc(r.user_message)}</div>
-        <div class="role-assistant" style="margin-top:8px">助手:</div>
-        <div class="msg-text">${esc(r.assistant_response)}</div>
-      </div>`).join('')}`;
+    <div style="margin-top:4px"><strong>创建:</strong> ${f.created_at || ''} · <strong>更新:</strong> ${f.updated_at || ''}</div>`;
   document.getElementById('fragment-modal').style.display = '';
 }
 
