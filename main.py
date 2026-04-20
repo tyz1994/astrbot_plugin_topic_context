@@ -29,7 +29,7 @@ from .tools.memory_tools import create_memory_tools
     "astrbot_plugin_topic_context",
     "zhangtianyu",
     "织忆 - 基于主题的记忆组织与上下文管理",
-    "1.0.0",
+    "1.1.0",
 )
 class TopicContextPlugin(Star):
     def __init__(self, context: Context, config: dict | None = None):
@@ -85,7 +85,10 @@ class TopicContextPlugin(Star):
         self.merger = FragmentMerger(summary_caller, self.store)
         self.experience_mgr = ExperienceManager(summary_caller, self.store)
         self.dream_mgr = DreamManager(summary_caller, self.store)
-        self.topic_matcher = TopicMatcher(topic_match_caller, self.store)
+        self.topic_matcher = TopicMatcher(
+            topic_match_caller, self.store,
+            persistent_topic_name=config.get("persistent_topic_name", ""),
+        )
         self.context_injector = ContextInjector(self.store)
         self.cold_starter = ColdStarter(self.store)
 
@@ -102,6 +105,11 @@ class TopicContextPlugin(Star):
         if config.get("dream_enabled", True):
             dream_hour = config.get("dream_hour", 2)
             self.dream_task = asyncio.create_task(self._dream_scheduler(dream_hour))
+
+        # 确保常驻主题存在于所有已有用户目录中
+        persistent_name = config.get("persistent_topic_name", "")
+        if persistent_name:
+            await self._ensure_persistent_topic(persistent_name)
 
         logger.info("[TopicContext] 插件初始化完成")
 
@@ -287,6 +295,47 @@ class TopicContextPlugin(Star):
         )
         return ""
 
+    async def _ensure_persistent_topic_for_user(self, umo: str, topic_name: str) -> None:
+        """为单个用户确保常驻主题存在，不存在则自动创建。"""
+        try:
+            index = await self.store.load_topics_index(umo)
+            if any(t["name"] == topic_name for t in index.get("topics", [])):
+                return
+
+            persistent_overview = "该主题每次都会被加载到上下文，可将用户全局对话偏好、用户对助手的行为规范要求等记录在该主题"
+            topic = await self.store.create_empty_topic(umo, topic_name)
+            topic_id = topic["id"]
+
+            core = (
+                f"# 主题: {topic_name}\n\n"
+                f"## 概述\n{persistent_overview}\n\n"
+                f"## 关键信息\n\n"
+                f"## 最近记忆\n"
+            )
+            await self.store.save_core_md(umo, topic_id, core)
+
+            exp = f"# 主题: {topic_name} - 经验教训\n\n## 经验\n"
+            await self.store.save_experience_md(umo, topic_id, exp)
+
+            logger.info(f"[TopicContext] 为新用户 {umo} 创建常驻主题: {topic_name}")
+        except Exception as e:
+            logger.warning(f"[TopicContext] 为用户 {umo} 创建常驻主题失败: {e}")
+
+    async def _ensure_persistent_topic(self, topic_name: str) -> None:
+        """确保常驻主题在所有已有用户目录中存在，不存在则自动创建。"""
+        data_dir = StarTools.get_data_dir("astrbot_plugin_topic_context")
+        if not data_dir.exists():
+            return
+
+        for user_dir in data_dir.iterdir():
+            if not user_dir.is_dir():
+                continue
+            if user_dir.name.startswith(".") or user_dir.name == "debug":
+                continue
+
+            umo = user_dir.name
+            await self._ensure_persistent_topic_for_user(umo, topic_name)
+
     async def _get_config(self) -> dict:
         """获取插件配置。"""
         return self._plugin_config
@@ -306,7 +355,7 @@ class TopicContextPlugin(Star):
         - 跳过工具调用后的总结轮（resp.tools_call_extra_content 非空）
         - 从 on_llm_request 缓存中获取用户消息（event.message_str 在此钩子中不可靠）
         """
-        logger.info("[TopicContext] >>> on_llm_response 钩子已触发 <<<")
+        logger.debug("[TopicContext] >>> on_llm_response 钩子已触发 <<<")
 
         config = await self._get_config()
         if not config.get("enabled", True):
@@ -314,11 +363,11 @@ class TopicContextPlugin(Star):
             return
 
         umo = event.unified_msg_origin
-        logger.info(f"[TopicContext] umo={umo}")
+        logger.debug(f"[TopicContext] umo={umo}")
 
         # 跳过工具调用中间轮次（LLM 发起 function call，等待工具返回结果）
         if hasattr(response, "tools_call_name") and response.tools_call_name:
-            logger.info(
+            logger.debug(
                 f"[TopicContext] 检测到工具调用（tools={response.tools_call_name}），跳过总结"
             )
             return
@@ -328,24 +377,23 @@ class TopicContextPlugin(Star):
             hasattr(response, "tools_call_extra_content")
             and response.tools_call_extra_content
         ):
-            logger.info("[TopicContext] 检测到 tool loop 总结响应，跳过总结")
+            logger.debug("[TopicContext] 检测到 tool loop 总结响应，跳过总结")
             return
 
         # 从缓存获取用户消息（在 on_llm_request 中存入，以 span_id 为键）
         span_id = getattr(event, "span", None) and getattr(event.span, "span_id", None)
         entry = self._pending_user_messages.pop(span_id, None) if span_id else None
         user_message = entry[0] if entry else ""
-        logger.info(
+        logger.debug(
             "[TopicContext] 缓存的用户消息: " + ("有" if user_message else "无")
         )
         if not user_message:
-            logger.info("[TopicContext] 未找到缓存的用户消息，跳过总结")
+            logger.debug("[TopicContext] 未找到缓存的用户消息，跳过总结")
             return
 
         # 跳过斜杠指令型消息（如 /new, /memory, /help 等），无需总结记忆
         # 注意：is_at_or_wake_command 在私聊场景下永远为 True，不能用于此判断
         if user_message.strip().startswith("/"):
-            logger.info("[TopicContext] 是斜杠指令消息，跳过总结")
             return
 
         # 从 LLMResponse 提取助手回复文本
@@ -364,17 +412,16 @@ class TopicContextPlugin(Star):
             ]
             assistant_response = "\n".join(parts)
 
-        logger.info(
+        logger.debug(
             "[TopicContext] 提取到的助手回复: " + ("有" if assistant_response else "无")
         )
         if not assistant_response:
-            logger.info("[TopicContext] 助手回复为空，退出")
+            logger.debug("[TopicContext] 助手回复为空，退出")
             return
 
-        logger.info("[TopicContext] 即将进入 _process_round ...")
         try:
             await self._process_round(umo, user_message, assistant_response, config)
-            logger.info("[TopicContext] _process_round 执行完成")
+            logger.debug("[TopicContext] _process_round 执行完成")
         except Exception as e:
             logger.error(f"[TopicContext] 处理轮次失败: {e}", exc_info=True)
 
@@ -733,6 +780,11 @@ class TopicContextPlugin(Star):
 
             # 从 AstrBot 原始 contexts 中提取上一轮对话，辅助主题匹配
             prev_round = self._extract_prev_round(req.contexts)
+
+            # 确保新用户的常驻主题已创建
+            persistent_name = config.get("persistent_topic_name", "")
+            if persistent_name:
+                await self._ensure_persistent_topic_for_user(umo, persistent_name)
 
             # 1. 主题匹配（支持多主题）
             matched_topics = await self.topic_matcher.match(

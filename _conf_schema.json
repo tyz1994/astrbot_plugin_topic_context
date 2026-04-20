@@ -47,6 +47,12 @@
     "description": "WebUI 访问密码",
     "hint": "WebUI 登录密码。留空则自动生成随机密码并打印在日志中。"
   },
+  "persistent_topic_name": {
+    "type": "string",
+    "default": "",
+    "description": "常驻主题名称",
+    "hint": "每次对话都会被加载到上下文的主题名称，可用于注入全局对话偏好、用户规则等。助手可自主更新该主题内容，实现自进化。留空则不启用。"
+  },
   "provider_settings": {
     "type": "object",
     "description": "模型提供商",

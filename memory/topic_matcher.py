@@ -6,14 +6,16 @@ from .store import MemoryStore
 
 
 class TopicMatcher:
-    def __init__(self, llm_caller, store: MemoryStore):
+    def __init__(self, llm_caller, store: MemoryStore, persistent_topic_name: str = ""):
         """
         Args:
             llm_caller: 异步函数，签名为 async (system_prompt, prompt) -> str
             store: MemoryStore 实例
+            persistent_topic_name: 常驻主题名称，为空则不启用
         """
         self.llm_caller = llm_caller
         self.store = store
+        self.persistent_topic_name = persistent_topic_name
 
     async def match(
         self,
@@ -108,7 +110,15 @@ class TopicMatcher:
 
             if matched:
                 names = [t["name"] for t in matched]
-                logger.debug(f"[TopicMatcher] 匹配到主题: {names}")
+                logger.info(f"[TopicMatcher] 匹配到主题: {names}")
+
+            # 固定加入常驻主题（如果已配置且该用户存在该主题）
+            if self.persistent_topic_name:
+                for t in topics:
+                    if t["name"] == self.persistent_topic_name and t not in matched:
+                        matched.append(t)
+                        logger.debug(f"[TopicMatcher] 加入常驻主题: {t['name']}")
+                        break
 
             return matched
 
