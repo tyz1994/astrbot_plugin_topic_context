@@ -140,7 +140,10 @@ class TopicContextPlugin(Star):
     # ─── LLM 调用器 ───
 
     def _create_provider_caller(self, config: dict, provider_key: str, label: str):
-        """创建指定用途的 LLM 调用函数，支持从配置加载独立 provider。
+        """创建指定用途的 LLM 调用函数，延迟到首次调用时再解析 Provider。
+
+        不在初始化阶段获取 provider，因为主进程可能尚未创建好 provider 实例，
+        会导致读取失败。首次实际调用 caller 时才尝试从 core 模块获取 provider。
 
         Args:
             config: 插件配置
@@ -148,42 +151,48 @@ class TopicContextPlugin(Star):
             label: 日志标签（如 "记忆总结"）
 
         Returns:
-            (caller, provider) 元组：caller 为调用函数，provider 为加载的 provider 实例。
+            (caller, None) 元组：caller 为调用函数（内含延迟解析逻辑）。
         """
         provider_id = (
             config.get("provider_settings", {}).get(provider_key, "")
             if isinstance(config.get("provider_settings"), dict)
             else ""
         )
-        provider = None
 
-        if provider_id:
-            try:
-                provider = self.context.get_provider_by_id(provider_id)
-                if provider:
-                    logger.info(
-                        f"[TopicContext] {label}使用独立 Provider: {provider_id}"
-                    )
-                else:
-                    logger.warning(
-                        f"[TopicContext] 未找到{label} Provider: {provider_id}"
-                    )
-            except Exception as e:
-                logger.warning(
-                    f"[TopicContext] 无法加载{label} Provider {provider_id}: {e}"
-                )
-        else:
-            logger.warning(f"[TopicContext] {label}未配置 Provider ID")
+        # 延迟解析：不在初始化阶段获取 provider
+        _resolved_provider = None
+        _resolved = False
 
         async def caller(system_prompt: str, prompt: str, caller_name: str = "") -> str:
+            nonlocal _resolved_provider, _resolved
+            if not _resolved:
+                _resolved = True
+                if provider_id:
+                    try:
+                        _resolved_provider = self.context.get_provider_by_id(provider_id)
+                        if _resolved_provider:
+                            logger.info(
+                                f"[TopicContext] {label}使用独立 Provider: {provider_id}"
+                            )
+                        else:
+                            logger.warning(
+                                f"[TopicContext] 未找到{label} Provider: {provider_id}"
+                            )
+                    except Exception as e:
+                        logger.warning(
+                            f"[TopicContext] 无法加载{label} Provider {provider_id}: {e}"
+                        )
+                else:
+                    logger.warning(f"[TopicContext] {label}未配置 Provider ID")
+
             return await self._call_llm(
                 system_prompt,
                 prompt,
-                provider=provider,
+                provider=_resolved_provider,
                 caller_name=caller_name,
             )
 
-        return caller, provider
+        return caller, None
 
     async def _call_llm(
         self,
